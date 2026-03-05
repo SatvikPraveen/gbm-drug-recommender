@@ -1,0 +1,21 @@
+Drug_A,Drug_B,Combination,Total_Score,Pathway_Score,Target_Score,Similarity_Score,Rationale,Rank
+Afatinib,Gefitinib,Afatinib + Gefitinib,0.591717889445657,0.5,0.5,0.8668715577826278,Moderately complementary pathways,1
+Gefitinib,Erlotinib,Gefitinib + Erlotinib,0.554197232974203,0.5,0.5,0.716788931896812,Moderately complementary pathways,2
+Dasatinib,Imatinib,Dasatinib + Imatinib,0.5470649318028522,0.5,0.5,0.6882597272114087,Moderately complementary pathways,3
+Etoposide,Doxorubicin,Etoposide + Doxorubicin,0.5320588938700848,0.5,0.5,0.6282355754803389,Moderately complementary pathways,4
+Imatinib,Methotrexate,Imatinib + Methotrexate,0.5305230535212018,0.5,0.5,0.622092214084807,Moderately complementary pathways,5
+Dasatinib,Gefitinib,Dasatinib + Gefitinib,0.5247969444281135,0.5,0.5,0.5991877777124542,Moderately complementary pathways; Optimal similarity balance,6
+Dasatinib,Methotrexate,Dasatinib + Methotrexate,0.5244990004823099,0.5,0.5,0.5979960019292395,Moderately complementary pathways; Optimal similarity balance,7
+Imatinib,Erlotinib,Imatinib + Erlotinib,0.5181479331620213,0.5,0.5,0.5725917326480853,Moderately complementary pathways; Optimal similarity balance,8
+Lapatinib,Imatinib,Lapatinib + Imatinib,0.5136594417119267,0.5,0.5,0.5546377668477068,Moderately complementary pathways; Optimal similarity balance,9
+Sorafenib,Nilotinib,Sorafenib + Nilotinib,0.5110710086403312,0.5,0.5,0.5442840345613249,Moderately complementary pathways; Optimal similarity balance,10
+Erlotinib,Methotrexate,Erlotinib + Methotrexate,0.5092242856820425,0.5,0.5,0.5368971427281698,Moderately complementary pathways; Optimal similarity balance,11
+Dasatinib,Afatinib,Dasatinib + Afatinib,0.5048897976929185,0.5,0.5,0.519559190771674,Moderately complementary pathways; Optimal similarity balance,12
+Dasatinib,Erlotinib,Dasatinib + Erlotinib,0.503575107102753,0.5,0.5,0.5143004284110121,Moderately complementary pathways; Optimal similarity balance,13
+Lapatinib,Erlotinib,Lapatinib + Erlotinib,0.49767112456651097,0.5,0.5,0.4906844982660439,Moderately complementary pathways; Optimal similarity balance,14
+Etoposide,Lapatinib,Etoposide + Lapatinib,0.49648442974797,0.5,0.5,0.4859377189918801,Moderately complementary pathways; Optimal similarity balance,15
+Imatinib,Gefitinib,Imatinib + Gefitinib,0.4910597543107386,0.5,0.5,0.46423901724295447,Moderately complementary pathways; Optimal similarity balance,16
+Afatinib,Erlotinib,Afatinib + Erlotinib,0.4837872794845648,0.5,0.5,0.43514911793825917,Moderately complementary pathways; Optimal similarity balance,17
+Lapatinib,Methotrexate,Lapatinib + Methotrexate,0.4817221893204583,0.5,0.5,0.4268887572818332,Moderately complementary pathways; Optimal similarity balance,18
+Afatinib,Imatinib,Afatinib + Imatinib,0.48006925019952984,0.5,0.5,0.42027700079811936,Moderately complementary pathways; Optimal similarity balance,19
+Etoposide,Erlotinib,Etoposide + Erlotinib,0.4737242469081172,0.5,0.5,0.39489698763246883,Moderately complementary pathways,20
