@@ -1,0 +1,21 @@
+Drug_A,Drug_B,Has_Interaction,Severity,Interaction_Types,Descriptions,Recommendation
+Lapatinib,Methotrexate,True,moderate,Structural Incompatibility,Strong acids and bases may neutralize each other,Use with caution - monitor closely
+Imatinib,Methotrexate,True,moderate,Structural Incompatibility,Strong acids and bases may neutralize each other,Use with caution - monitor closely
+Dasatinib,Methotrexate,True,moderate,Structural Incompatibility,Strong acids and bases may neutralize each other,Use with caution - monitor closely
+Erlotinib,Methotrexate,True,moderate,Structural Incompatibility,Strong acids and bases may neutralize each other,Use with caution - monitor closely
+Afatinib,Gefitinib,False,none,None,None,Safe to combine
+Afatinib,Erlotinib,False,none,None,None,Safe to combine
+Imatinib,Gefitinib,False,none,None,None,Safe to combine
+Etoposide,Lapatinib,False,none,None,None,Safe to combine
+Lapatinib,Erlotinib,False,none,None,None,Safe to combine
+Dasatinib,Erlotinib,False,none,None,None,Safe to combine
+Dasatinib,Afatinib,False,none,None,None,Safe to combine
+Sorafenib,Nilotinib,False,none,None,None,Safe to combine
+Lapatinib,Imatinib,False,none,None,None,Safe to combine
+Imatinib,Erlotinib,False,none,None,None,Safe to combine
+Dasatinib,Gefitinib,False,none,None,None,Safe to combine
+Etoposide,Doxorubicin,False,none,None,None,Safe to combine
+Dasatinib,Imatinib,False,none,None,None,Safe to combine
+Gefitinib,Erlotinib,False,none,None,None,Safe to combine
+Afatinib,Imatinib,False,none,None,None,Safe to combine
+Etoposide,Erlotinib,False,none,None,None,Safe to combine

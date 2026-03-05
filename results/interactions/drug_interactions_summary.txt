@@ -1,0 +1,12 @@
+Drug-Drug Interaction Analysis Summary
+==================================================
+
+Total combinations analyzed: 20
+Combinations with interactions: 4
+Safe combinations: 16
+
+Severity Breakdown:
+  High: 0 (0.0%)
+  Moderate: 4 (20.0%)
+  Low: 0 (0.0%)
+  None: 16 (80.0%)

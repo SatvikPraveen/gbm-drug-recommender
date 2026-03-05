@@ -1,0 +1,136 @@
+================================================================================
+GBM DRUG ANALYSIS AND RECOMMENDATION SYSTEM
+Final Analysis Report
+Generated: 2026-03-04 23:03:56
+================================================================================
+
+1. DATA SUMMARY
+--------------------------------------------------------------------------------
+Total drug-cell line combinations: 76
+Unique drugs: 20
+GBM cell lines: 4
+
+Molecular features extracted: 20 drugs
+
+2. SIMILARITY ANALYSIS
+--------------------------------------------------------------------------------
+
+TANIMOTO:
+  Mean similarity: 0.106
+  Max similarity: 0.779
+  Pairs > 0.7: 1
+
+MCS:
+  No valid similarities computed
+
+GCN:
+  Mean similarity: 0.373
+  Max similarity: 0.909
+  Pairs > 0.7: 12
+
+3. CLUSTERING ANALYSIS
+--------------------------------------------------------------------------------
+
+KMEANS:
+  Clusters: 5
+  Silhouette Score: 0.433
+
+DBSCAN:
+  Clusters: 0
+  Silhouette Score: -1.000
+
+HIERARCHICAL:
+  Clusters: 5
+  Silhouette Score: 0.425
+
+4. DRUG PREDICTIONS
+--------------------------------------------------------------------------------
+Promising drugs identified: 13
+
+Top 20 Predicted Drugs:
+  Dasatinib: 0.092
+  Etoposide: 0.081
+  Afatinib: 0.073
+  Lapatinib: 0.054
+  Imatinib: 0.051
+  Gefitinib: 0.042
+  Carmustine: 0.011
+  Erlotinib: 0.000
+  Cisplatin: 0.000
+  Sorafenib: 0.000
+  Methotrexate: 0.000
+  Nilotinib: 0.000
+  Doxorubicin: 0.000
+  Bevacizumab: -0.000
+  Carboplatin: -0.000
+  Lomustine: -0.000
+  Vincristine: -0.000
+  Temozolomide: -0.000
+  Paclitaxel: -0.000
+  Docetaxel: -0.075
+
+5. COMBINATION THERAPY
+--------------------------------------------------------------------------------
+Drug combinations analyzed: 20
+
+Top 10 Combinations:
+  Afatinib + Gefitinib: 0.592
+    Rationale: Moderately complementary pathways
+  Gefitinib + Erlotinib: 0.554
+    Rationale: Moderately complementary pathways
+  Dasatinib + Imatinib: 0.547
+    Rationale: Moderately complementary pathways
+  Etoposide + Doxorubicin: 0.532
+    Rationale: Moderately complementary pathways
+  Imatinib + Methotrexate: 0.531
+    Rationale: Moderately complementary pathways
+  Dasatinib + Gefitinib: 0.525
+    Rationale: Moderately complementary pathways; Optimal similarity balance
+  Dasatinib + Methotrexate: 0.524
+    Rationale: Moderately complementary pathways; Optimal similarity balance
+  Imatinib + Erlotinib: 0.518
+    Rationale: Moderately complementary pathways; Optimal similarity balance
+  Lapatinib + Imatinib: 0.514
+    Rationale: Moderately complementary pathways; Optimal similarity balance
+  Sorafenib + Nilotinib: 0.511
+    Rationale: Moderately complementary pathways; Optimal similarity balance
+
+6. MODEL COMPARISON
+--------------------------------------------------------------------------------
+Model Performance (Cross-Validation):
+
+KNN:
+  CV Score: 0.5828 ± 0.1144
+  F1 Score: 0.6250
+
+Random Forest:
+  CV Score: 0.5470 ± 0.1594
+  F1 Score: 0.4950
+
+SVM:
+  CV Score: 0.5908 ± 0.1221
+  F1 Score: 0.5602
+
+Neural Network:
+  CV Score: 0.6038 ± 0.1475
+  F1 Score: 0.4950
+
+XGBoost:
+  CV Score: 0.6305 ± 0.1584
+  F1 Score: 0.4950
+
+7. DRUG-DRUG INTERACTIONS
+--------------------------------------------------------------------------------
+Combinations checked: 20
+Interactions found: 4
+Safe combinations: 16
+
+Severity breakdown:
+  High: 0
+  Moderate: 4
+  Low: 0
+  None: 16
+
+================================================================================
+Analysis complete. See results/ directory for detailed outputs.
+================================================================================

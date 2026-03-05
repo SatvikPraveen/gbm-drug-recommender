@@ -1,0 +1,19 @@
+{
+  "include": [
+    "src",
+    "main.py",
+    "dashboard.py"
+  ],
+  "pythonVersion": "3.9",
+  "pythonPlatform": "Darwin",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportAttributeAccessIssue": "none",
+  "reportArgumentType": "none",
+  "reportReturnType": "none",
+  "reportCallIssue": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOperatorIssue": "none",
+  "reportAssignmentType": "none"
+}
