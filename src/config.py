@@ -131,6 +131,23 @@ GCN_BATCH_SIZE = 32
 # Cosine similarity threshold for embeddings
 COSINE_SIMILARITY_THRESHOLD = 0.8
 
+# ==================== END-TO-END GNN PARAMETERS ====================
+
+# GNN Model Architecture
+GNN_HIDDEN_CHANNELS = 128  # Hidden dimension for GNN layers
+GNN_NUM_GNN_LAYERS = 3     # Number of graph convolution layers
+GNN_NUM_MLP_LAYERS = 2     # Number of MLP layers in prediction head
+GNN_DROPOUT = 0.2          # Dropout probability
+GNN_TYPE = 'gcn'           # Options: 'gcn', 'gat'
+GNN_POOLING = 'mean'       # Options: 'mean', 'max', 'add'
+
+# GNN Training Parameters
+GNN_LEARNING_RATE = 0.001
+GNN_BATCH_SIZE = 32
+GNN_EPOCHS = 100
+GNN_EARLY_STOPPING_PATIENCE = 10
+GNN_VALIDATION_SPLIT = 0.1
+
 # ==================== CLUSTERING PARAMETERS ====================
 
 # K-Means
