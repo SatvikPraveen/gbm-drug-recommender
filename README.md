@@ -159,19 +159,20 @@ By combining these approaches with unsupervised clustering and one-class machine
 This project bridges multiple disciplines:
 
 **Chemistry & Biology**
-- 🧪 RDKit for molecular descriptor extraction
+- 🧪 RDKit for molecular descriptor extraction and SMILES processing
 - 🔬 PubChem integration for chemical structures
 - 🧬 Enrichr for pathway enrichment analysis
 
 **Machine Learning**
-- 🤖 PyTorch with Metal (GPU) acceleration for deep learning
+- 🤖 PyTorch 2.8.0 with Metal Performance Shaders (MPS) GPU acceleration
+- 🕸️ PyTorch Geometric 2.6.1 for end-to-end graph neural networks (GCN/GAT)
 - 📊 Scikit-learn for clustering and classification
 - 🚀 XGBoost for gradient boosting models
-- 🕸️ Graph Convolutional Networks for structural embeddings
 - 📈 Comprehensive model comparison framework with cross-validation
 
-**Data Engineering**
+**Data Engineering & Deployment**
 - 🔄 Automated ETL pipeline for GDSC datasets
+- 🐳 Docker & docker-compose for containerized deployment
 - 📝 Reproducible workflow with comprehensive logging
 - 🧩 Modular architecture for extensibility
 - 💻 Interactive Streamlit dashboard for exploration
@@ -203,6 +204,45 @@ pip install -r requirements.txt
 ```
 
 That's it! The virtual environment now contains everything needed: PyTorch with GPU acceleration, RDKit for chemistry, and all scientific computing libraries.
+
+### 🐳 Docker Setup (Alternative)
+
+For a containerized environment with all dependencies pre-configured:
+
+```bash
+# Build and run with Docker Compose
+docker-compose up gbm-analysis
+
+# Or build the Docker image manually
+docker build -t gbm-drug-analysis .
+
+# Run the analysis
+docker run -v $(pwd)/data:/app/data -v $(pwd)/results:/app/results gbm-drug-analysis
+```
+
+**Available Docker Services:**
+
+```bash
+# Run main analysis pipeline
+docker-compose up gbm-analysis
+
+# Train GNN model
+docker-compose --profile gnn up gnn-training
+
+# Launch interactive dashboard
+docker-compose --profile dashboard up dashboard
+# Access at http://localhost:8501
+
+# Start Jupyter notebook server
+docker-compose --profile notebook up notebook
+# Access at http://localhost:8888
+```
+
+**Benefits:**
+- ✅ No manual dependency installation
+- ✅ Consistent environment across machines
+- ✅ Isolated from system Python
+- ✅ Easy scaling and deployment
 
 ### 🎬 Running the Analysis
 
@@ -259,6 +299,50 @@ source venv/bin/activate
 - ⚠️ **Drug Interactions**: Safety analysis with severity classifications
 
 All visualizations are interactive with zoom, pan, and download capabilities.
+
+### 🧠 Graph Neural Network Training
+
+Train an end-to-end GNN model that learns directly from molecular SMILES:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Train GNN for IC50 regression (default)
+python train_gnn.py --task regression --epochs 100 --batch-size 32
+
+# Train GNN for effectiveness classification
+python train_gnn.py --task classification --epochs 100
+
+# Use GAT instead of GCN
+python train_gnn.py --gnn-type gat --hidden-channels 256
+
+# Full options
+python train_gnn.py \
+  --task regression \
+  --gnn-type gcn \
+  --hidden-channels 128 \
+  --num-gnn-layers 3 \
+  --num-mlp-layers 2 \
+  --dropout 0.2 \
+  --epochs 100 \
+  --batch-size 32 \
+  --learning-rate 0.001
+```
+
+**GNN Features:**
+- 🔬 No manual feature engineering - learns from molecular graphs
+- ⚡ GPU acceleration (CUDA/MPS) for faster training
+- 🎯 Supports both regression (IC50) and classification (effective/not)
+- 📊 Automatic train/validation split with early stopping
+- 💾 Saves trained models and predictions to `results/models/`
+- 📈 Generates training history and prediction plots
+
+**Output Files:**
+- `results/models/gnn_regression_model.pt` - Trained GNN model
+- `results/models/gnn_regression_predictions.csv` - Test set predictions
+- `results/figures/gnn_regression_training_history.png` - Loss curves
+- `results/figures/gnn_regression_predictions.png` - Prediction scatter plot
 
 ---
 
@@ -601,19 +685,23 @@ analyzer = TanimotoSimilarityAnalyzer()
 
 ## 🔮 What's Next?
 
-### ✅ Recently Implemented (v2.0)
+### ✅ Recently Implemented (v2.1)
+- ✨ **End-to-End Graph Neural Networks**: Direct learning from molecular SMILES
+- ✨ GNN model with GCN/GAT support for drug efficacy prediction
+- ✨ GPU acceleration (CUDA/MPS) for faster training
+- ✨ Docker containerization for reproducible deployments
 - ✨ Combination Therapy Analysis with pathway complementarity
-- ✨ Multi-Model Comparison (5 ML algorithms with cross-validation)
+- ✨ Multi-Model Comparison (6 ML algorithms with cross-validation)
 - ✨ Drug-Drug Interaction Safety checking (CYP450 profiling)
 - ✨ Interactive Streamlit Dashboard for visual exploration
 
 ### 🎯 Future Directions
 - 🧬 **Multi-omics Integration**: Gene expression, mutation, proteomics data
-- 🧠 **Deep Learning++**: End-to-end graph neural networks on molecular structures
 - 🏥 **Clinical Correlation**: Patient outcome data and clinical trial integration
 - 🔬 **3D Molecular Docking**: Protein-ligand binding simulations
 - 📚 **Extended Drug Library**: ChEMBL, PubChem Bioassay integration
 - 🎯 **Precision Targeting**: Patient-specific treatment recommendations
+- 🧠 **Attention Mechanisms**: Explainable GNN predictions with attention visualization
 
 ### ⚠️ Known Limitations
 - Sample data represents subset of GBM cell lines
