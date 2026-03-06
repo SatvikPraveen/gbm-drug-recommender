@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Main analysis pipeline
+  gbm-analysis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gbm-drug-analysis:latest
+    container_name: gbm-drug-analysis
+    volumes:
+      # Mount data directory for input/output
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./notebooks:/app/notebooks
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python main.py
+    
+  # GNN Training service
+  gnn-training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gbm-drug-analysis:latest
+    container_name: gnn-training
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python train_gnn.py --epochs 100 --batch-size 32 --task regression
+    profiles:
+      - gnn  # Only run when explicitly requested
+    
+  # Interactive dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gbm-drug-analysis:latest
+    container_name: gbm-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+    environment:
+      - PYTHONPATH=/app
+    command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
+    profiles:
+      - dashboard  # Only run when explicitly requested
+    
+  # Jupyter notebook server for interactive analysis
+  notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gbm-drug-analysis:latest
+    container_name: gbm-notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/app
+    environment:
+      - PYTHONPATH=/app
+      - JUPYTER_ENABLE_LAB=yes
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+    profiles:
+      - notebook  # Only run when explicitly requested
