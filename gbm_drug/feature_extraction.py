@@ -1,428 +1,209 @@
 """
-Molecular Feature Extraction Module
+Molecular featurisation from SMILES with RDKit.
 
-Extracts chemical descriptors and fingerprints from SMILES structures.
+Three representations are produced from the curated SMILES table
+(``data/smiles/drug_smiles.csv``, built by ``scripts/fetch_smiles.py``):
 
-Features Extracted:
-- Molecular Weight, LogP (lipophilicity)
-- Topological Polar Surface Area (TPSA)
-- Number of H-bond donors/acceptors
-- Number of rotatable bonds
-- Aromatic rings count
-- Lipinski's Rule of Five parameters
-- Morgan fingerprints (ECFP)
-- MACCS keys
+* physico-chemical descriptors (``MOLECULAR_DESCRIPTORS`` in config) plus
+  Lipinski rule-of-five flags,
+* Morgan (ECFP-like) bit fingerprints,
+* Bemis–Murcko scaffolds, used to build out-of-distribution CV folds.
 
-SMILES Management:
-- Automatic lookup via PubChem API
-- Local caching in smiles_database.json
-- Fallback to existing database entries
-
-Outputs:
-- molecular_features.csv - Feature matrix for all drugs
-- smiles_database.json - Cached SMILES structures
-
-Usage:
-    smiles_manager = SMILESManager()
-    smiles_dict = smiles_manager.update_smiles_from_list(drug_names)
-    extractor = MolecularFeatureExtractor()
-    features = extractor.process_drug_list(drug_names, smiles_dict)
+Nothing here talks to the network. Compounds flagged ``is_small_molecule == False``
+(MW > 1500 Da: antibodies, peptides) are excluded by :func:`small_molecule_smiles`.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterable, Mapping
 
 import numpy as np
 import pandas as pd
-import pubchempy as pcp
-from rdkit import Chem
-from rdkit.Chem import (
-    AllChem,
-    Crippen,
-    Descriptors,
-    MACCSkeys,
-    RDKFingerprint,
-    rdFingerprintGenerator,
-)
-from tqdm import tqdm
+from rdkit import Chem, DataStructs, RDLogger
+from rdkit.Chem import QED, Crippen, Descriptors, Lipinski, rdFingerprintGenerator, rdMolDescriptors
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
-from .config import (
-    FEATURES_FILE,
-    FINGERPRINT_BITS,
-    FINGERPRINT_RADIUS,
-    FINGERPRINT_TYPE,
-    MOLECULAR_DESCRIPTORS,
-    SMILES_DATA_DIR,
-)
+from .config import FINGERPRINT_BITS, FINGERPRINT_RADIUS, MOLECULAR_DESCRIPTORS, SMILES_FILE
 
+RDLogger.DisableLog("rdApp.*")
 logger = logging.getLogger(__name__)
 
-_MORGAN_GENERATOR = rdFingerprintGenerator.GetMorganGenerator(
-    radius=FINGERPRINT_RADIUS, fpSize=FINGERPRINT_BITS
-)
+# Descriptor name -> callable(mol) -> float. Only names listed in config are computed.
+_DESCRIPTOR_FUNCTIONS = {
+    "MolWt": Descriptors.MolWt,
+    "MolLogP": Crippen.MolLogP,
+    "MolMR": Crippen.MolMR,
+    "NumHDonors": Lipinski.NumHDonors,
+    "NumHAcceptors": Lipinski.NumHAcceptors,
+    "TPSA": rdMolDescriptors.CalcTPSA,
+    "NumRotatableBonds": Lipinski.NumRotatableBonds,
+    "NumAromaticRings": rdMolDescriptors.CalcNumAromaticRings,
+    "FractionCSP3": rdMolDescriptors.CalcFractionCSP3,
+    "HeavyAtomCount": Lipinski.HeavyAtomCount,
+    "RingCount": rdMolDescriptors.CalcNumRings,
+    "NumHeteroatoms": Lipinski.NumHeteroatoms,
+    "qed": QED.qed,
+}
+
+LIPINSKI_COLUMNS = ["lipinski_MW", "lipinski_LogP", "lipinski_HBD", "lipinski_HBA", "lipinski_pass"]
 
 
-class MolecularFeatureExtractor:
-    """Extract molecular features from SMILES strings using RDKit"""
+# ---------------------------------------------------------------------------
+# SMILES table
+# ---------------------------------------------------------------------------
 
-    def __init__(self):
-        """Initialize the feature extractor"""
-        self.smiles_cache = {}
-        self.features_cache = {}
 
-    def get_smiles_from_pubchem(self, drug_name: str) -> str | None:
-        """
-        Retrieve SMILES string from PubChem for a given drug name
+def load_smiles_table(path=SMILES_FILE) -> pd.DataFrame:
+    """Read the curated SMILES table written by scripts/fetch_smiles.py."""
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found; run `python scripts/fetch_smiles.py`.")
+    return pd.read_csv(path, dtype={"pubchem_cid": "Int64"})
 
-        Args:
-            drug_name: Name of the drug
 
-        Returns:
-            SMILES string or None if not found
-        """
-        if drug_name in self.smiles_cache:
-            return self.smiles_cache[drug_name]
+def small_molecule_smiles(table: pd.DataFrame | None = None) -> dict[str, str]:
+    """drug_name -> SMILES for entries that parse and are small molecules."""
+    table = load_smiles_table() if table is None else table
+    keep = table["smiles"].notna() & table["is_small_molecule"].astype(bool)
+    out = {}
+    for name, smi in zip(table.loc[keep, "drug_name"], table.loc[keep, "smiles"]):
+        if Chem.MolFromSmiles(smi) is not None:
+            out[name] = smi
+    dropped = len(table) - len(out)
+    if dropped:
+        logger.info("Excluded %d entries without a usable small-molecule SMILES", dropped)
+    return out
 
-        try:
-            compounds = pcp.get_compounds(drug_name, "name")
-            if compounds:
-                smiles = compounds[0].isomeric_smiles
-                self.smiles_cache[drug_name] = smiles
-                return smiles
-        except Exception as e:
-            logger.debug(f"Could not retrieve SMILES for {drug_name}: {e}")
 
+# ---------------------------------------------------------------------------
+# Single-molecule features
+# ---------------------------------------------------------------------------
+
+
+def mol_from_smiles(smiles: str | None) -> Chem.Mol | None:
+    if smiles is None or (isinstance(smiles, float) and np.isnan(smiles)):
         return None
+    return Chem.MolFromSmiles(str(smiles))
 
-    def smiles_to_mol(self, smiles: str) -> Chem.Mol | None:
-        """
-        Convert SMILES string to RDKit molecule object
 
-        Args:
-            smiles: SMILES string
-
-        Returns:
-            RDKit Mol object or None if conversion fails
-        """
+def compute_descriptors(
+    mol: Chem.Mol | None, names: Iterable[str] = MOLECULAR_DESCRIPTORS
+) -> dict[str, float]:
+    """Physico-chemical descriptors; NaN for every name if the molecule is missing."""
+    names = list(names)
+    if mol is None:
+        return dict.fromkeys(names, np.nan)
+    out = {}
+    for name in names:
+        fn = _DESCRIPTOR_FUNCTIONS.get(name)
+        if fn is None:
+            raise KeyError(f"Unknown descriptor {name!r}; add it to _DESCRIPTOR_FUNCTIONS")
         try:
-            mol = Chem.MolFromSmiles(smiles)
-            return mol
-        except Exception as e:
-            logger.debug(f"Error converting SMILES to molecule: {e}")
-            return None
-
-    def extract_molecular_descriptors(self, mol: Chem.Mol) -> dict[str, float]:
-        """
-        Extract molecular descriptors from RDKit molecule
-
-        Args:
-            mol: RDKit Mol object
-
-        Returns:
-            Dictionary of molecular descriptors
-        """
-        if mol is None:
-            return {desc: np.nan for desc in MOLECULAR_DESCRIPTORS}
-
-        descriptors = {}
-
-        # Molecular weight
-        if "MolWt" in MOLECULAR_DESCRIPTORS:
-            descriptors["MolWt"] = Descriptors.MolWt(mol)
-
-        # LogP (lipophilicity)
-        if "LogP" in MOLECULAR_DESCRIPTORS or "MolLogP" in MOLECULAR_DESCRIPTORS:
-            descriptors["LogP"] = Descriptors.MolLogP(mol)
-            descriptors["MolLogP"] = Crippen.MolLogP(mol)
-
-        # Hydrogen bond donors
-        if "NumHDonors" in MOLECULAR_DESCRIPTORS:
-            descriptors["NumHDonors"] = Descriptors.NumHDonors(mol)
-
-        # Hydrogen bond acceptors
-        if "NumHAcceptors" in MOLECULAR_DESCRIPTORS:
-            descriptors["NumHAcceptors"] = Descriptors.NumHAcceptors(mol)
-
-        # Topological polar surface area
-        if "TPSA" in MOLECULAR_DESCRIPTORS:
-            descriptors["TPSA"] = Descriptors.TPSA(mol)
-
-        # Rotatable bonds
-        if "NumRotatableBonds" in MOLECULAR_DESCRIPTORS:
-            descriptors["NumRotatableBonds"] = Descriptors.NumRotatableBonds(mol)
-
-        # Aromatic rings
-        if "NumAromaticRings" in MOLECULAR_DESCRIPTORS:
-            descriptors["NumAromaticRings"] = Descriptors.NumAromaticRings(mol)
-
-        # Fraction of sp3 carbons (try different spellings for compatibility)
-        if "FractionCSP3" in MOLECULAR_DESCRIPTORS:
-            try:
-                descriptors["FractionCSP3"] = Descriptors.FractionCSP3(mol)
-            except AttributeError:
-                try:
-                    # Try lowercase version
-                    descriptors["FractionCSP3"] = Descriptors.FractionCsp3(mol)
-                except AttributeError:
-                    # Skip if not available
-                    descriptors["FractionCSP3"] = 0.0
-
-        # Molar refractivity
-        if "MolMR" in MOLECULAR_DESCRIPTORS:
-            descriptors["MolMR"] = Crippen.MolMR(mol)
-
-        return descriptors
-
-    def generate_fingerprint(self, mol: Chem.Mol, fp_type: str = FINGERPRINT_TYPE) -> np.ndarray | None:
-        """
-        Generate molecular fingerprint
-
-        Args:
-            mol: RDKit Mol object
-            fp_type: Type of fingerprint ('Morgan', 'MACCS', 'RDKit')
-
-        Returns:
-            Fingerprint as numpy array
-        """
-        if mol is None:
-            return None
-
-        try:
-            if fp_type == "Morgan":
-                fp = _MORGAN_GENERATOR.GetFingerprint(mol)
-            elif fp_type == "MACCS":
-                fp = MACCSkeys.GenMACCSKeys(mol)
-            elif fp_type == "RDKit":
-                fp = RDKFingerprint(mol)
-            else:
-                logger.warning(f"Unknown fingerprint type: {fp_type}, using Morgan")
-                fp = _MORGAN_GENERATOR.GetFingerprint(mol)
-
-            # Convert to numpy array
-            arr = np.zeros((1,))
-            AllChem.DataStructs.ConvertToNumpyArray(fp, arr)
-            return arr
-
-        except Exception as e:
-            logger.debug(f"Error generating fingerprint: {e}")
-            return None
-
-    def process_drug_list(
-        self, drug_names: list[str], smiles_dict: dict[str, str] | None = None
-    ) -> pd.DataFrame:
-        """
-        Process a list of drugs and extract features
-
-        Args:
-            drug_names: List of drug names
-            smiles_dict: Optional dictionary mapping drug names to SMILES
-
-        Returns:
-            DataFrame with molecular features
-        """
-        logger.info(f"Processing {len(drug_names)} drugs for feature extraction")
-
-        results = []
-
-        for drug_name in tqdm(drug_names, desc="Extracting features"):
-            # Get SMILES
-            if smiles_dict and drug_name in smiles_dict:
-                smiles = smiles_dict[drug_name]
-            else:
-                smiles = self.get_smiles_from_pubchem(drug_name)
-
-            if smiles is None:
-                logger.debug(f"No SMILES found for {drug_name}")
-                results.append(
-                    {
-                        "drug_name": drug_name,
-                        "smiles": None,
-                        **{desc: np.nan for desc in MOLECULAR_DESCRIPTORS},
-                    }
-                )
-                continue
-
-            # Convert to molecule
-            mol = self.smiles_to_mol(smiles)
-
-            # Extract descriptors
-            descriptors = self.extract_molecular_descriptors(mol)
-
-            results.append({"drug_name": drug_name, "smiles": smiles, **descriptors})
-
-        df = pd.DataFrame(results)
-        logger.info(f"Extracted features for {len(df)} drugs")
-
-        return df
-
-    def save_features(self, features_df: pd.DataFrame, filepath: str = FEATURES_FILE):
-        """
-        Save extracted features to file
-
-        Args:
-            features_df: DataFrame with features
-            filepath: Output file path
-        """
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        features_df.to_csv(filepath, index=False)
-        logger.info(f"Features saved to {filepath}")
-
-    def load_features(self, filepath: str = FEATURES_FILE) -> pd.DataFrame:
-        """
-        Load previously extracted features
-
-        Args:
-            filepath: File path to load from
-
-        Returns:
-            DataFrame with features
-        """
-        if filepath.exists():
-            logger.info(f"Loading features from {filepath}")
-            return pd.read_csv(filepath)
-        else:
-            logger.warning(f"Features file not found: {filepath}")
-            return pd.DataFrame()
-
-    def calculate_lipinski_rule_of_five(self, mol: Chem.Mol) -> dict[str, bool]:
-        """
-        Check Lipinski's Rule of Five for drug-likeness
-
-        Args:
-            mol: RDKit Mol object
-
-        Returns:
-            Dictionary with rule compliance
-        """
-        if mol is None:
-            return {criterion: False for criterion in ["MW", "LogP", "HBD", "HBA", "ROF"]}
-
-        mw = Descriptors.MolWt(mol)
-        logp = Descriptors.MolLogP(mol)
-        hbd = Descriptors.NumHDonors(mol)
-        hba = Descriptors.NumHAcceptors(mol)
-
-        rules = {
-            "MW": mw <= 500,  # Molecular weight <= 500 Da
-            "LogP": logp <= 5,  # LogP <= 5
-            "HBD": hbd <= 5,  # H-bond donors <= 5
-            "HBA": hba <= 10,  # H-bond acceptors <= 10
-        }
-
-        # Passes if no more than one violation
-        rules["ROF"] = sum(rules.values()) >= 3
-
-        return rules
-
-    def add_lipinski_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add Lipinski Rule of Five compliance to features
-
-        Args:
-            features_df: DataFrame with SMILES
-
-        Returns:
-            DataFrame with Lipinski features added
-        """
-        logger.info("Calculating Lipinski Rule of Five compliance")
-
-        lipinski_results = []
-
-        for _, row in tqdm(features_df.iterrows(), total=len(features_df), desc="Lipinski analysis"):
-            if pd.notna(row.get("smiles")):
-                mol = self.smiles_to_mol(row["smiles"])
-                rules = self.calculate_lipinski_rule_of_five(mol)
-            else:
-                rules = {criterion: False for criterion in ["MW", "LogP", "HBD", "HBA", "ROF"]}
-
-            lipinski_results.append(rules)
-
-        lipinski_df = pd.DataFrame(lipinski_results)
-        lipinski_df.columns = [f"lipinski_{col}" for col in lipinski_df.columns]
-
-        result_df = pd.concat([features_df, lipinski_df], axis=1)
-
-        logger.info(f"{lipinski_df['lipinski_ROF'].sum()} drugs pass Lipinski's Rule of Five")
-
-        return result_df
-
-
-class SMILESManager:
-    """Manage SMILES strings for drugs"""
-
-    def __init__(self, smiles_dir: str = SMILES_DATA_DIR):
-        """
-        Initialize SMILES manager
-
-        Args:
-            smiles_dir: Directory to store SMILES data
-        """
-        self.smiles_dir = smiles_dir
-        self.smiles_file = self.smiles_dir / "drug_smiles.csv"
-
-    def load_smiles_mapping(self) -> dict[str, str]:
-        """
-        Load drug name to SMILES mapping
-
-        Returns:
-            Dictionary mapping drug names to SMILES
-        """
-        if self.smiles_file.exists():
-            df = pd.read_csv(self.smiles_file)
-            return dict(zip(df["drug_name"], df["smiles"]))
-        return {}
-
-    def save_smiles_mapping(self, smiles_dict: dict[str, str]):
-        """
-        Save drug name to SMILES mapping
-
-        Args:
-            smiles_dict: Dictionary mapping drug names to SMILES
-        """
-        self.smiles_dir.mkdir(parents=True, exist_ok=True)
-        df = pd.DataFrame(list(smiles_dict.items()), columns=["drug_name", "smiles"])
-        df.to_csv(self.smiles_file, index=False)
-        logger.info(f"Saved {len(smiles_dict)} SMILES strings to {self.smiles_file}")
-
-    def update_smiles_from_list(self, drug_names: list[str]) -> dict[str, str]:
-        """
-        Update SMILES mapping from a list of drug names
-
-        Args:
-            drug_names: List of drug names
-
-        Returns:
-            Updated SMILES dictionary
-        """
-        smiles_dict = self.load_smiles_mapping()
-        extractor = MolecularFeatureExtractor()
-
-        new_drugs = [name for name in drug_names if name not in smiles_dict]
-
-        if new_drugs:
-            logger.info(f"Fetching SMILES for {len(new_drugs)} new drugs")
-
-            for drug_name in tqdm(new_drugs, desc="Fetching SMILES"):
-                smiles = extractor.get_smiles_from_pubchem(drug_name)
-                if smiles:
-                    smiles_dict[drug_name] = smiles
-
-            self.save_smiles_mapping(smiles_dict)
-
-        return smiles_dict
-
-
-if __name__ == "__main__":
-    # Example usage
-    extractor = MolecularFeatureExtractor()
-
-    # Test with a few drugs
-    test_drugs = ["Doxorubicin", "Gemcitabine", "Temozolomide"]
-
-    features = extractor.process_drug_list(test_drugs)
-    print("\nMolecular Features:")
-    print(features)
-
-    # Add Lipinski features
-    features_with_lipinski = extractor.add_lipinski_features(features)
-    print("\nWith Lipinski Features:")
-    print(features_with_lipinski)
+            out[name] = float(fn(mol))
+        except Exception:  # RDKit raises for exotic atoms (e.g. metal complexes) in a few descriptors
+            out[name] = np.nan
+    return out
+
+
+def lipinski_flags(mol: Chem.Mol | None) -> dict[str, bool]:
+    """Rule-of-five components and the usual 'at most one violation' pass flag."""
+    if mol is None:
+        return dict.fromkeys(LIPINSKI_COLUMNS, False)
+    rules = {
+        "lipinski_MW": Descriptors.MolWt(mol) <= 500,
+        "lipinski_LogP": Crippen.MolLogP(mol) <= 5,
+        "lipinski_HBD": Lipinski.NumHDonors(mol) <= 5,
+        "lipinski_HBA": Lipinski.NumHAcceptors(mol) <= 10,
+    }
+    rules["lipinski_pass"] = sum(rules.values()) >= 3
+    return rules
+
+
+_MORGAN_GENERATORS: dict[tuple[int, int], object] = {}
+
+
+def _morgan_generator(radius: int, n_bits: int):
+    key = (radius, n_bits)
+    if key not in _MORGAN_GENERATORS:
+        _MORGAN_GENERATORS[key] = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
+    return _MORGAN_GENERATORS[key]
+
+
+def morgan_fingerprint(
+    mol: Chem.Mol | None, radius: int = FINGERPRINT_RADIUS, n_bits: int = FINGERPRINT_BITS
+):
+    """RDKit ExplicitBitVect Morgan fingerprint, or None if the molecule is missing."""
+    if mol is None:
+        return None
+    return _morgan_generator(radius, n_bits).GetFingerprint(mol)
+
+
+def fingerprint_to_array(fp) -> np.ndarray:
+    arr = np.zeros((fp.GetNumBits(),), dtype=np.uint8)
+    DataStructs.ConvertToNumpyArray(fp, arr)
+    return arr
+
+
+def murcko_scaffold(mol: Chem.Mol | None, generic: bool = False) -> str:
+    """
+    Bemis–Murcko scaffold SMILES. Acyclic molecules (no ring system) return "".
+
+    ``generic=True`` collapses atom types and bond orders so scaffolds group more
+    coarsely, which makes scaffold splits stricter.
+    """
+    if mol is None:
+        return ""
+    try:
+        core = MurckoScaffold.GetScaffoldForMol(mol)
+        if generic:
+            core = MurckoScaffold.MakeScaffoldGeneric(core)
+        return Chem.MolToSmiles(core)
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Tables
+# ---------------------------------------------------------------------------
+
+
+def build_feature_table(
+    smiles_by_drug: Mapping[str, str], descriptor_names: Iterable[str] = MOLECULAR_DESCRIPTORS
+) -> pd.DataFrame:
+    """One row per drug: SMILES, descriptors, Lipinski flags, scaffold."""
+    names = list(descriptor_names)
+    rows = []
+    for drug, smi in smiles_by_drug.items():
+        mol = mol_from_smiles(smi)
+        row = {"drug_name": drug, "smiles": smi}
+        row.update(compute_descriptors(mol, names))
+        row.update(lipinski_flags(mol))
+        row["scaffold"] = murcko_scaffold(mol)
+        rows.append(row)
+    table = pd.DataFrame(rows, columns=["drug_name", "smiles", *names, *LIPINSKI_COLUMNS, "scaffold"])
+    n_bad = int(table[names].isna().all(axis=1).sum())
+    if n_bad:
+        logger.warning("%d drugs produced no descriptors (unparsable SMILES)", n_bad)
+    return table
+
+
+def build_fingerprint_matrix(
+    smiles_by_drug: Mapping[str, str], radius: int = FINGERPRINT_RADIUS, n_bits: int = FINGERPRINT_BITS
+) -> tuple[np.ndarray, list[str]]:
+    """Dense uint8 matrix of Morgan bits (rows follow the mapping's order); unparsable rows are all-zero."""
+    drugs = list(smiles_by_drug)
+    matrix = np.zeros((len(drugs), n_bits), dtype=np.uint8)
+    for i, drug in enumerate(drugs):
+        fp = morgan_fingerprint(mol_from_smiles(smiles_by_drug[drug]), radius, n_bits)
+        if fp is not None:
+            matrix[i] = fingerprint_to_array(fp)
+    return matrix, drugs
+
+
+def descriptor_matrix(table: pd.DataFrame, names: Iterable[str] = MOLECULAR_DESCRIPTORS) -> np.ndarray:
+    """Float matrix of descriptors with NaNs imputed by the column median (caller should scale)."""
+    X = np.array(table[list(names)].to_numpy(dtype=float), dtype=float, copy=True)
+    medians = np.nanmedian(X, axis=0)
+    nan_idx = np.where(np.isnan(X))
+    X[nan_idx] = np.take(medians, nan_idx[1])
+    return X

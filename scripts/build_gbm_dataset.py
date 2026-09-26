@@ -13,6 +13,12 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
+
+# Allow running as `python scripts/<name>.py` without installing the package.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from gbm_drug.data_processing import process_pipeline
 

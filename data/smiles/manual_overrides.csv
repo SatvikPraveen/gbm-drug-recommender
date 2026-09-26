@@ -1,0 +1,11 @@
+drug_name,pubchem_cid,smiles,note
+Cetuximab,,,anti-EGFR monoclonal antibody; no small-molecule structure (PubChem name search matched the brand synonym Erbitux to an unrelated 273 Da compound)
+rTRAIL,,,recombinant TRAIL protein; no small-molecule structure
+FS106,,,Sanger internal CHEK1 inhibitor code; PubChem 'FS-106' is chlorhexidine gluconate (unrelated)
+THR-101,,,Sanger internal mutant-RAS compound code; PubChem 'THR101' is an unrelated benzothiazolone
+KIN001-270,,,only resolvable via the generic synonym 'CDK9 inhibitor'; ambiguous so excluded
+BEN,,,unannotated abbreviation in GDSC1; PubChem returns benzamidine but the identity is unverified
+SB52334,9967941,,GDSC name is a typo of SB-525334 (ALK5/TGFBR1 inhibitor); PubChem matched 2-phenylnicotinic acid
+Nutlin-3a (-),11433190,,active (-)-enantiomer Nutlin-3a rather than the racemate returned by the name search
+ascorbate (vitamin C),54670067,,L-ascorbic acid (neutral form) rather than the ascorbate anion record
+Picolinici-acid,1018,,GDSC typo for picolinic acid; use the neutral acid rather than the picolinate anion

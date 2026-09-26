@@ -1,0 +1,113 @@
+123138
+123829
+150412
+50869
+615590
+630600
+667880
+720427
+729189
+741909
+743380
+765771
+776928
+965-D2
+993-D2
+AZD7969
+BAY ACCi
+BAY AKT1
+BAY-HDAC11_1
+BAY-HDAC11_2
+BAY-HDAC11_4
+BAY-MPS-combo 2 (paclitaxel 1 uM)
+BAY-MPS-combo-1 (paclitaxel 5 uM)
+BAY-MPS1
+BDF00022089a
+BDILV000379a
+BDOCA000347a
+BDP-00009066
+BEN	unannotated abbreviation in GDSC1; PubChem returns benzamidine but the identity is unverified
+BPD-00008900
+CCT245467
+CDK9_5038
+CDK9_5576
+CRT0160829
+CT7033-2
+Cetuximab	anti-EGFR monoclonal antibody; no small-molecule structure (PubChem name search matched the brand synonym Erbitux to an unrelated 273 Da compound)
+Dyrk1b_0191
+ERK_2440
+ERK_6604
+Eg5_9814
+EphB4_9721
+FEN1_3940
+FGFR_0939
+FGFR_3831
+FS106	Sanger internal CHEK1 inhibitor code; PubChem 'FS-106' is chlorhexidine gluconate (unrelated)
+FS112
+FY012
+FY026
+FY069
+GSK2276186C
+GSK3337463A
+Genentech Cpd 10
+HG-6-71-01
+IAP_5620
+IAP_7638
+ICL1100013
+IGF1R_3801
+IGFR_3801
+IRAK4_4710
+JAK1_3715
+JAK1_8709
+JAK3_7406
+JAK_8517
+JQ12
+JW-7-52-1
+KIN001-042
+KIN001-236
+KIN001-270	only resolvable via the generic synonym 'CDK9 inhibitor'; ambiguous so excluded
+LMB_AB1
+LMB_AB2
+LMB_AB3
+MCT1_6447
+MCT4_1422
+MetAP2 Inhibitor, A832234
+N22899-6-C1
+N23918-95-7
+N24798-49-A1
+N25720-51-A1
+N27922-53-1
+N29087-69-1
+N30652-18-1
+PAK_5339
+PARP_0108
+PARP_9482
+PARP_9495
+PBD-288
+PI3Ka_4409
+PLK_6522
+QL-VIII-58
+QL-XII-47
+QL-XII-61
+RAF_9304
+TAF1_5496
+TANK_1366
+THR-101	Sanger internal mutant-RAS compound code; PubChem 'THR101' is an unrelated benzothiazolone
+THR-102
+THR-103
+THZ-1-87
+THZ-2-102-1
+THZ-2-49
+THZ-2-98-01
+TL-1-85
+TL-2-105
+TTK_3146
+ULK1_4989
+VNLG/124
+VSP34_8731
+VTP-A
+VTP-B
+XMD15-27
+ZL049
+ZL109
+rTRAIL	recombinant TRAIL protein; no small-molecule structure
