@@ -1,92 +1,115 @@
-# Data Directory
+# Data
 
-This directory contains the GDSC drug sensitivity datasets used for GBM drug analysis.
+All inputs are public. Nothing in this directory was hand-edited except the
+files explicitly marked *curated* below.
 
-## Directory Structure
+## Layout
 
 ```
 data/
-├── raw/              # Original datasets (place GDSC files here)
-├── processed/        # Cleaned and merged datasets
-└── smiles/           # SMILES string mappings
+├── MANIFEST.json                 # GDSC release, URLs, SHA-256 checksums (the source of truth)
+├── raw/                          # GDSC release files (gitignored; scripts/download_gdsc.py)
+├── processed/
+│   ├── gdsc_gbm_dose_response.csv.gz   # committed: every GBM curve from GDSC1+GDSC2
+│   └── gdsc_gbm_drug_summary.csv       # committed: one row per drug with potency/selectivity stats
+├── smiles/
+│   ├── drug_smiles.csv           # committed: PubChem-resolved SMILES + RDKit annotations
+│   ├── manual_overrides.csv      # curated: drug names PubChem cannot resolve by name
+│   └── unresolved.txt            # drugs with no structure (biologics, unnamed screening compounds)
+└── genesets/                     # Enrichr GMT libraries (gitignored; fetched on demand)
 ```
 
-## Required Files
+## Source: GDSC release 8.5 (27 Oct 2023)
 
-Place the following files in `data/raw/`:
+Genomics of Drug Sensitivity in Cancer, Wellcome Sanger Institute / Massachusetts
+General Hospital. Bulk download page: <https://www.cancerrxgene.org/downloads/bulk_download>.
 
-1. **GDSC1.rds** - GDSC1 drug sensitivity dataset
-2. **GDSC2.rds** - GDSC2 drug sensitivity dataset
+| File | Rows | What it is |
+|---|---|---|
+| `GDSC1_fitted_dose_response_27Oct23.xlsx` | 333,161 | Fitted curves, screen 1 (2010–2015 chemistry, 72 h, resazurin/Syto60) |
+| `GDSC2_fitted_dose_response_27Oct23.xlsx` | 242,036 | Fitted curves, screen 2 (2015 onward, CellTiter-Glo) |
+| `screened_compounds_rel_8.5.csv` | 621 | Drug names, synonyms, targets, target pathways |
+| `Cell_Lines_Details.xlsx` | 1,002 | Cell line annotation incl. TCGA label |
 
-## Data Source
+Reproduce the exact inputs with:
 
-The GDSC (Genomics of Drug Sensitivity in Cancer) datasets are available from:
-- Website: https://www.cancerrxgene.org/
-- Data portal: https://www.cancerrxgene.org/downloads
+```bash
+python scripts/download_gdsc.py      # fetches to data/raw/ and verifies SHA-256
+python scripts/build_gbm_dataset.py  # regenerates data/processed/*
+python scripts/fetch_smiles.py       # regenerates data/smiles/drug_smiles.csv from PubChem
+```
 
-## Dataset Description
+If GDSC re-issues a release the checksums will fail and the download script
+refuses to proceed; update `MANIFEST.json` deliberately and re-run.
 
-### GDSC1
-- Focuses on standard chemotherapy agents
-- Contains drug response data across hundreds of cancer cell lines
-- Includes IC50, AUC, and Z-score measurements
+## Cohort definition
 
-### GDSC2
-- Includes targeted therapies and newer compounds
-- Complementary to GDSC1 with overlapping cell lines
-- Similar response metrics (IC50, AUC, Z-score)
+GBM cell lines are those GDSC labels `TCGA_DESC == "GBM"`: **34 cell lines** across
+the two screens. This replaces an earlier hard-coded name list (`U-87`, `U-251`,
+`SNB-19`, …) that matched only 4 lines because GDSC spells them `U-87-MG`, `U251`,
+`SNB75`.
 
-## Important Columns
+Result: **20,329 curves, 542 distinct drug names**, 5–34 GBM lines per drug (median 33).
 
-After processing, the merged dataset includes:
+## Columns in `gdsc_gbm_dose_response.csv.gz`
 
-- `cell_line`: Cell line name (e.g., U-87, U-251 for GBM)
-- `drug_name`: Name of the drug
-- `ic50`: Half-maximal inhibitory concentration (μM)
-- `auc`: Area under the dose-response curve
-- `z_score`: Standardized sensitivity score
-- `tissue`: Tissue type (filtered for GBM/brain)
-- `target`: Putative drug target
-- `pathway`: Associated biological pathway
+| Column | Meaning |
+|---|---|
+| `dataset` | `GDSC1` or `GDSC2` |
+| `drug_id`, `drug_name` | GDSC identifiers; names whitespace-normalised so both screens merge |
+| `putative_target`, `pathway_name` | GDSC's own annotation |
+| `cell_line`, `cosmic_id`, `sanger_model_id`, `tcga_desc` | Cell line identity |
+| `min_conc_um`, `max_conc_um` | Tested concentration range (µM) |
+| `ln_ic50` | Natural log of fitted IC50 (µM) |
+| `ic50_um` | `exp(ln_ic50)` |
+| `ic50_within_range` | `ln_ic50 <= ln(max_conc_um)`; **False means the IC50 is extrapolated beyond the tested range** |
+| `auc` | Area under the fitted dose-response curve (1 = no effect) |
+| `rmse` | Curve-fit residual |
+| `z_score` | GDSC's per-drug z-score of ln IC50 across *all* screened cell lines |
 
-## GBM Cell Lines
+## Columns in `gdsc_gbm_drug_summary.csv`
 
-The following GBM cell lines are filtered and analyzed:
+One row per drug name. Duplicate screens of the same drug on the same cell line
+(GDSC1 vs GDSC2, or two `DRUG_ID`s) are averaged *before* any statistic so each
+cell line counts once.
 
-- U-87
-- U-251
-- U-138
-- SNB-19
-- SF-268
-- SF-295
-- SF-539
-- SNB-75
-- T98G
-- LN-229
-- A172
+| Column | Meaning |
+|---|---|
+| `n_curves`, `n_cell_lines`, `datasets`, `drug_ids` | Provenance |
+| `ln_ic50_mean`, `ln_ic50_median`, `ln_ic50_sd`, `ic50_um_geomean` | Potency in GBM lines (lower = more potent) |
+| `auc_mean` | Mean AUC (lower = more sensitive) |
+| `frac_ic50_within_range` | Share of curves whose IC50 lies inside the tested range |
+| `z_mean`, `z_sd` | Mean and SD of GDSC z-scores over GBM lines. **Negative = GBM more sensitive than the pan-cancer panel** |
+| `z_t`, `z_p`, `z_q` | One-sample t-test of z-scores against 0; `z_q` is Benjamini–Hochberg FDR over all drugs |
+| `gbm_selective` | `z_q < 0.05` and `z_mean <= SELECTIVITY_Z_EFFECT` and `n_cell_lines >= 5` |
+| `potent` | `ln_ic50_mean < 0` (geometric-mean IC50 below 1 µM) |
 
-## Data Processing
+Thresholds are in `gbm_drug/config.py` and justified in `docs/METHODS.md`.
 
-The raw data undergoes the following processing steps:
+## Caveats you should know before modelling
 
-1. Load from RDS format using `pyreadr`
-2. Standardize column names
-3. Merge GDSC1 and GDSC2
-4. Filter for GBM cell lines
-5. Convert LN_IC50 to IC50 (μM)
-6. Handle missing values (mean imputation)
-7. Remove outliers (Z-score > 3)
-8. Add efficacy labels (IC50 < 10 μM)
+- **Most IC50s are extrapolated.** The median drug has only 17 % of its GBM curves
+  with an IC50 inside the tested range. `ln_ic50` beyond `max_conc_um` is a
+  curve-fit extrapolation, not a measurement. `z_score` and `auc` are less
+  affected, which is one reason selectivity is defined on z-scores.
+- **Drug names are not structures.** `Bleomycin (10 uM)` and `Bleomycin (50 uM)`
+  are the same molecule screened at two concentrations; several drugs have two
+  `DRUG_ID`s. Structure-based models must group by InChIKey when splitting
+  (see `gbm_drug/evaluation.py`), or the same molecule leaks across folds.
+- **GDSC1 and GDSC2 used different viability assays.** Mixing them adds
+  batch variance to `ln_ic50`; the z-score is computed within each screen.
+- **Biologics have no SMILES.** Antibodies and other non-small-molecule entries
+  are listed in `smiles/unresolved.txt` and excluded from structure-based analyses.
 
-Processed data is saved to `data/processed/cleaned_gdsc_data.csv`
+## Licence and citation
 
-## Usage Terms
+GDSC data are provided for academic, non-commercial use
+(<https://www.cancerrxgene.org/legal>). The derived tables here are a filtered
+view of that release and carry the same terms. If you use them, cite:
 
-Please ensure compliance with GDSC data usage policies:
-- Data is for research purposes only
-- Cite GDSC publications in any research outputs
-- Do not redistribute raw data
+- Yang W. et al. *Genomics of Drug Sensitivity in Cancer (GDSC): a resource for
+  therapeutic biomarker discovery in cancer cells.* Nucleic Acids Res 41, D955–D961 (2013).
+- Iorio F. et al. *A Landscape of Pharmacogenomic Interactions in Cancer.*
+  Cell 166, 740–754 (2016).
 
-## References
-
-Yang, W., Soares, J., Greninger, P. et al. Genomics of Drug Sensitivity in Cancer (GDSC): a resource for therapeutic biomarker discovery in cancer cells. Nucleic Acids Res. 41, D955–D961 (2013).
+SMILES come from PubChem (Kim S. et al., Nucleic Acids Res 2023), public domain.

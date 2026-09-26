@@ -1,463 +1,347 @@
 """
-Data Processing Module
+GDSC data processing: from the raw release files to a per-drug GBM response table.
 
-Handles GDSC (Genomics of Drug Sensitivity in Cancer) data processing.
+Pipeline
+--------
+1. ``load_gdsc_raw``       read the GDSC1/GDSC2 fitted dose-response workbooks.
+2. ``build_gbm_subset``    keep curves from cell lines GDSC labels ``TCGA_DESC == "GBM"``,
+                           standardise column names, derive IC50 in µM and an
+                           in-range flag. One row per (dataset, drug_id, cell line).
+3. ``summarize_drugs``     collapse to one row per drug: potency (mean ln IC50 over
+                           GBM lines), GBM selectivity (mean GDSC z-score, one-sample
+                           t-test vs 0, BH-FDR), targets and pathway from GDSC's own
+                           annotation, and the derived labels used downstream.
 
-Functionality:
-- Load drug screening data (IC50 values) from GDSC database
-- Load cell line annotations and filter for GBM cell lines
-- Merge datasets and clean missing values
-- Calculate effectiveness metrics based on IC50 thresholds
-- Export processed data for downstream analysis
+Why z-scores
+------------
+GDSC's ``Z_SCORE`` standardises each drug's ln IC50 across every screened cell line.
+A negative mean over GBM lines therefore means GBM is *more sensitive than the
+pan-cancer average* to that drug, which is the question a GBM-specific
+recommender should ask. Raw IC50 thresholds (e.g. "< 10 µM") conflate general
+cytotoxicity with GBM-specific activity and depend on the tested concentration
+range, so they are kept only as a secondary label.
 
-Data Sources:
-- GDSC drug screening dataset (IC50 values)
-- Cell line annotations (tissue types, cancer types)
-- Drug metadata (SMILES, targets, mechanisms)
-
-Outputs:
-- cleaned_data.csv - Processed drug-cell line combinations
-- Data includes: drug_name, cell_line, IC50, effectiveness labels
-
-Usage:
-    loader = GDSCDataLoader()
-    data = loader.process_pipeline(filter_gbm=True, save_output=True)
+Pseudo-replication
+------------------
+Many drugs were screened in both GDSC1 and GDSC2 (and some twice within one
+release). Curves are averaged within (drug, cell line) *before* the t-test so
+each GBM cell line contributes one observation per drug.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-# Try importing pyreadr, but make it optional
-try:
-    import pyreadr
-
-    PYREADR_AVAILABLE = True
-except ImportError:
-    PYREADR_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("pyreadr not available. Will use CSV files instead.")
+from scipy import stats
+from statsmodels.stats.multitest import multipletests
 
 from .config import (
-    AUC_THRESHOLD_EFFECTIVE,
-    CLEANED_DATA_FILE,
-    GBM_CELL_LINES,
+    DRUG_SUMMARY_FILE,
+    GBM_DOSE_RESPONSE_FILE,
+    GBM_TCGA_LABEL,
     GDSC1_FILE,
     GDSC2_FILE,
-    IC50_THRESHOLD_EFFECTIVE,
-    IMPUTATION_STRATEGY,
-    MISSING_THRESHOLD,
-    Z_SCORE_THRESHOLD,
+    POTENCY_LN_IC50_THRESHOLD,
+    SELECTIVITY_FDR,
+    SELECTIVITY_MIN_CELL_LINES,
+    SELECTIVITY_Z_EFFECT,
 )
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
+# GDSC column -> snake_case name used throughout the package.
+COLUMN_MAP = {
+    "DATASET": "dataset",
+    "COSMIC_ID": "cosmic_id",
+    "CELL_LINE_NAME": "cell_line",
+    "SANGER_MODEL_ID": "sanger_model_id",
+    "TCGA_DESC": "tcga_desc",
+    "DRUG_ID": "drug_id",
+    "DRUG_NAME": "drug_name",
+    "PUTATIVE_TARGET": "putative_target",
+    "PATHWAY_NAME": "pathway_name",
+    "MIN_CONC": "min_conc_um",
+    "MAX_CONC": "max_conc_um",
+    "LN_IC50": "ln_ic50",
+    "AUC": "auc",
+    "RMSE": "rmse",
+    "Z_SCORE": "z_score",
+}
 
-class GDSCDataLoader:
+REQUIRED_RAW_COLUMNS = (
+    "DATASET",
+    "CELL_LINE_NAME",
+    "TCGA_DESC",
+    "DRUG_ID",
+    "DRUG_NAME",
+    "LN_IC50",
+    "AUC",
+    "Z_SCORE",
+)
+
+SUBSET_COLUMNS = [
+    "dataset",
+    "drug_id",
+    "drug_name",
+    "putative_target",
+    "pathway_name",
+    "cosmic_id",
+    "sanger_model_id",
+    "cell_line",
+    "tcga_desc",
+    "min_conc_um",
+    "max_conc_um",
+    "ln_ic50",
+    "ic50_um",
+    "ic50_within_range",
+    "auc",
+    "rmse",
+    "z_score",
+]
+
+
+# ---------------------------------------------------------------------------
+# Raw loading
+# ---------------------------------------------------------------------------
+
+
+def load_gdsc_raw(paths: Iterable[Path] = (GDSC1_FILE, GDSC2_FILE)) -> pd.DataFrame:
+    """Read and concatenate GDSC fitted dose-response workbooks (xlsx or csv)."""
+    frames = []
+    for path in paths:
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"{path} not found. Run `python scripts/download_gdsc.py` first.")
+        logger.info("Reading %s", path.name)
+        frame = pd.read_csv(path) if path.suffix == ".csv" else pd.read_excel(path)
+        missing = [c for c in REQUIRED_RAW_COLUMNS if c not in frame.columns]
+        if missing:
+            raise ValueError(f"{path.name} is missing expected GDSC columns: {missing}")
+        frames.append(frame)
+    raw = pd.concat(frames, ignore_index=True)
+    logger.info("Loaded %d curves from %d file(s)", len(raw), len(frames))
+    return raw
+
+
+# ---------------------------------------------------------------------------
+# GBM subset
+# ---------------------------------------------------------------------------
+
+
+def _normalise_drug_name(name: str) -> str:
+    return " ".join(str(name).split())
+
+
+def build_gbm_subset(raw: pd.DataFrame, tcga_label: str = GBM_TCGA_LABEL) -> pd.DataFrame:
     """
-    Load and process GDSC datasets from RDS or CSV files.
+    Filter raw GDSC curves to one tumour type and standardise columns.
 
-    Automatically handles both RDS and CSV formats:
-    - Prefers CSV files if available (no pyreadr dependency)
-    - Falls back to RDS if pyreadr is installed
-    - Provides clear error messages if files are missing
+    Returns one row per (dataset, drug_id, cell_line) with IC50 in µM and a flag
+    for whether the fitted IC50 lies within the tested concentration range
+    (IC50s above ``MAX_CONC`` are extrapolations of the curve fit).
     """
+    subset = raw.loc[raw["TCGA_DESC"] == tcga_label].copy()
+    if subset.empty:
+        raise ValueError(f"No curves with TCGA_DESC == {tcga_label!r}; check the input files.")
 
-    def __init__(self, gdsc1_path: Path = GDSC1_FILE, gdsc2_path: Path = GDSC2_FILE):
-        """
-        Initialize data loader
+    subset = subset.rename(columns=COLUMN_MAP)
+    subset["drug_name"] = subset["drug_name"].map(_normalise_drug_name)
+    subset["ln_ic50"] = subset["ln_ic50"].astype(float)
+    subset["ic50_um"] = np.exp(subset["ln_ic50"])
+    if "max_conc_um" in subset.columns:
+        subset["ic50_within_range"] = subset["ln_ic50"] <= np.log(subset["max_conc_um"].astype(float))
+    else:
+        subset["max_conc_um"] = np.nan
+        subset["min_conc_um"] = np.nan
+        subset["ic50_within_range"] = pd.NA
 
-        Args:
-            gdsc1_path: Path to GDSC1 file (RDS or CSV)
-            gdsc2_path: Path to GDSC2 file (RDS or CSV)
-        """
-        self.gdsc1_path = gdsc1_path
-        self.gdsc2_path = gdsc2_path
-        self.gdsc1_data = None
-        self.gdsc2_data = None
-        self.merged_data = None
+    for col in SUBSET_COLUMNS:
+        if col not in subset.columns:
+            subset[col] = pd.NA
 
-    def load_rds_file(self, filepath: Path) -> pd.DataFrame:
-        """
-        Load RDS or CSV file and convert to pandas DataFrame
-        Automatically detects format based on file extension.
-        If RDS is not available, looks for CSV alternative.
+    subset = (
+        subset[SUBSET_COLUMNS]
+        .sort_values(["drug_name", "dataset", "drug_id", "cell_line"])
+        .reset_index(drop=True)
+    )
+    logger.info(
+        "%s subset: %d curves, %d cell lines, %d drugs",
+        tcga_label,
+        len(subset),
+        subset["cell_line"].nunique(),
+        subset["drug_name"].nunique(),
+    )
+    return subset
 
-        Args:
-            filepath: Path to RDS or CSV file
 
-        Returns:
-            DataFrame containing the data
-        """
-        filepath = Path(filepath)
+# ---------------------------------------------------------------------------
+# Per-drug summary
+# ---------------------------------------------------------------------------
 
-        # Check if CSV version exists (e.g., GDSC1.csv instead of GDSC1.rds)
-        csv_path = filepath.with_suffix(".csv")
 
-        if csv_path.exists():
-            logger.info(f"Loading CSV file: {csv_path}")
-            try:
-                df = pd.read_csv(csv_path)
-                logger.info(f"Loaded {len(df)} rows and {len(df.columns)} columns from CSV")
-                return df
-            except Exception as e:
-                logger.error(f"Error loading CSV file {csv_path}: {e}")
-                raise
+def _mode_or_first(values: pd.Series) -> str | None:
+    values = values.dropna().astype(str)
+    if values.empty:
+        return None
+    return values.mode().iloc[0]
 
-        # Try RDS if pyreadr is available and file exists
-        if filepath.exists() and filepath.suffix == ".rds":
-            if not PYREADR_AVAILABLE:
-                raise ImportError(
-                    f"pyreadr is not installed, cannot read {filepath}. "
-                    f"Please convert to CSV: {csv_path} or install pyreadr/rpy2."
-                )
 
-            logger.info(f"Loading RDS file: {filepath}")
-            try:
-                result = pyreadr.read_r(str(filepath))
-                # RDS files typically have one object, get the first one
-                df = result[None] if None in result else list(result.values())[0]
-                logger.info(f"Loaded {len(df)} rows and {len(df.columns)} columns from RDS")
-                return df
-            except Exception as e:
-                logger.error(f"Error loading RDS file {filepath}: {e}")
-                raise
+def _join_unique(values: pd.Series) -> str:
+    return ";".join(sorted({str(v) for v in values.dropna()}))
 
-        # Neither CSV nor RDS found
-        raise FileNotFoundError(
-            f"Could not find data file. Tried:\n"
-            f"  - CSV: {csv_path}\n"
-            f"  - RDS: {filepath}\n"
-            f"Please convert RDS files to CSV or install pyreadr."
+
+def summarize_drugs(
+    subset: pd.DataFrame,
+    fdr: float = SELECTIVITY_FDR,
+    min_cell_lines: int = SELECTIVITY_MIN_CELL_LINES,
+    z_effect: float = SELECTIVITY_Z_EFFECT,
+    potency_threshold: float = POTENCY_LN_IC50_THRESHOLD,
+) -> pd.DataFrame:
+    """
+    Collapse GBM curves to one row per drug with potency and selectivity statistics.
+
+    Columns
+    -------
+    n_curves, n_cell_lines, datasets, drug_ids
+    ln_ic50_mean / _median / _sd   potency across GBM lines (ln µM; lower = more potent)
+    ic50_um_geomean                exp(ln_ic50_mean)
+    auc_mean                       mean area under the dose-response curve (lower = more sensitive)
+    frac_ic50_within_range         share of curves whose IC50 lies inside the tested range
+    z_mean, z_sd                   GDSC z-score statistics (negative = GBM more sensitive than average)
+    z_t, z_p, z_q                  one-sample t-test of z-scores vs 0 and BH-adjusted p
+    gbm_selective                  z_q < fdr and z_mean <= z_effect and n_cell_lines >= min_cell_lines
+    potent                         ln_ic50_mean < potency_threshold
+    putative_target, pathway_name  GDSC's annotation (mode across curves)
+    """
+    # Average duplicate screens of the same drug on the same cell line first so
+    # the t-test sees each GBM cell line once per drug.
+    per_line = (
+        subset.groupby(["drug_name", "cell_line"], as_index=False)
+        .agg(ln_ic50=("ln_ic50", "mean"), auc=("auc", "mean"), z_score=("z_score", "mean"))
+        .dropna(subset=["ln_ic50"])
+    )
+
+    def _drug_stats(group: pd.DataFrame) -> pd.Series:
+        z = group["z_score"].dropna().to_numpy()
+        n = len(z)
+        if n >= 2 and np.std(z, ddof=1) > 0:
+            t_stat, p_val = stats.ttest_1samp(z, popmean=0.0)
+        else:
+            t_stat, p_val = np.nan, np.nan
+        return pd.Series(
+            {
+                "n_cell_lines": int(group["cell_line"].nunique()),
+                "ln_ic50_mean": group["ln_ic50"].mean(),
+                "ln_ic50_median": group["ln_ic50"].median(),
+                "ln_ic50_sd": group["ln_ic50"].std(ddof=1),
+                "auc_mean": group["auc"].mean(),
+                "z_mean": z.mean() if n else np.nan,
+                "z_sd": np.std(z, ddof=1) if n >= 2 else np.nan,
+                "z_t": t_stat,
+                "z_p": p_val,
+            }
         )
 
-    def load_gdsc_datasets(self) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Load both GDSC1 and GDSC2 datasets
-
-        Returns:
-            Tuple of (gdsc1_df, gdsc2_df)
-        """
-        self.gdsc1_data = self.load_rds_file(self.gdsc1_path)
-        self.gdsc2_data = self.load_rds_file(self.gdsc2_path)
-
-        return self.gdsc1_data, self.gdsc2_data
-
-    def standardize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Standardize column names across datasets
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            DataFrame with standardized column names
-        """
-        # Common column name mappings
-        column_mapping = {
-            "CELL_LINE_NAME": "cell_line",
-            "COSMIC_ID": "cosmic_id",
-            "DRUG_NAME": "drug_name",
-            "DRUG_ID": "drug_id",
-            "PUTATIVE_TARGET": "target",
-            "PATHWAY_NAME": "pathway",
-            "LN_IC50": "ln_ic50",
-            "AUC": "auc",
-            "RMSE": "rmse",
-            "Z_SCORE": "z_score",
-            "MAX_CONC": "max_conc",
-            "TCGA_DESC": "tissue",
-        }
-
-        # Rename columns if they exist
-        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-
-        return df
-
-    def filter_gbm_cell_lines(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Filter data for GBM-specific cell lines
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            Filtered DataFrame with only GBM cell lines
-        """
-        if "cell_line" not in df.columns:
-            logger.warning("'cell_line' column not found. Skipping GBM filtering.")
-            return df
-
-        logger.info(f"Filtering for GBM cell lines: {GBM_CELL_LINES}")
-
-        # Case-insensitive matching
-        df_filtered = df[df["cell_line"].str.upper().isin([cl.upper() for cl in GBM_CELL_LINES])].copy()
-
-        logger.info(f"Found {len(df_filtered)} records for GBM cell lines")
-
-        return df_filtered  # type: ignore[return-value]
-
-    def merge_datasets(self, gdsc1: pd.DataFrame, gdsc2: pd.DataFrame) -> pd.DataFrame:
-        """
-        Merge GDSC1 and GDSC2 datasets
-
-        Args:
-            gdsc1: GDSC1 DataFrame
-            gdsc2: GDSC2 DataFrame
-
-        Returns:
-            Merged DataFrame
-        """
-        logger.info("Merging GDSC1 and GDSC2 datasets")
-
-        # Standardize column names
-        gdsc1 = self.standardize_column_names(gdsc1)
-        gdsc2 = self.standardize_column_names(gdsc2)
-
-        # Add source column
-        gdsc1["source"] = "GDSC1"
-        gdsc2["source"] = "GDSC2"
-
-        # Find common columns
-        common_cols = list(set(gdsc1.columns) & set(gdsc2.columns))
-        logger.info(f"Common columns: {common_cols}")
-
-        # Concatenate datasets
-        merged = pd.concat([gdsc1[common_cols], gdsc2[common_cols]], ignore_index=True)
-
-        logger.info(f"Merged dataset shape: {merged.shape}")
-
-        self.merged_data = merged
-        return merged  # type: ignore[return-value]
-
-    def convert_ln_ic50_to_ic50(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convert LN_IC50 to IC50 in μM
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            DataFrame with IC50 column
-        """
-        if "ln_ic50" in df.columns:
-            # Convert from natural log to μM
-            df["ic50"] = np.exp(df["ln_ic50"])
-            logger.info("Converted ln_ic50 to ic50")
-
-        return df
-
-    def handle_missing_values(self, df: pd.DataFrame, strategy: str = IMPUTATION_STRATEGY) -> pd.DataFrame:
-        """
-        Handle missing values in the dataset
-
-        Args:
-            df: Input DataFrame
-            strategy: Imputation strategy ('mean', 'median', 'drop')
-
-        Returns:
-            DataFrame with handled missing values
-        """
-        logger.info(f"Handling missing values with strategy: {strategy}")
-
-        # Report missing values
-        missing_counts = df.isnull().sum()
-        missing_pct = (missing_counts / len(df)) * 100
-
-        logger.info("Missing value percentages:")
-        for col in missing_pct[missing_pct > 0].index:
-            logger.info(f"  {col}: {missing_pct[col]:.2f}%")
-
-        # Drop columns with too many missing values
-        cols_to_drop = missing_pct[missing_pct > MISSING_THRESHOLD * 100].index
-        if len(cols_to_drop) > 0:
-            logger.info(f"Dropping columns with >{MISSING_THRESHOLD * 100}% missing: {list(cols_to_drop)}")
-            df = df.drop(columns=cols_to_drop)
-
-        # Impute remaining missing values
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-
-        if strategy == "mean":
-            df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
-        elif strategy == "median":
-            df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
-        elif strategy == "drop":
-            df = df.dropna()
-
-        logger.info(f"Dataset shape after handling missing values: {df.shape}")
-
-        return df
-
-    def remove_outliers(self, df: pd.DataFrame, columns: list[str] | None = None) -> pd.DataFrame:
-        """
-        Remove outliers using Z-score method
-
-        Args:
-            df: Input DataFrame
-            columns: List of columns to check for outliers
-
-        Returns:
-            DataFrame with outliers removed
-        """
-        if columns is None:
-            columns = ["ic50", "auc", "z_score"]
-            columns = [col for col in columns if col in df.columns]
-
-        logger.info(f"Removing outliers from columns: {columns}")
-
-        initial_len = len(df)
-
-        for col in columns:
-            if col in df.columns:
-                z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
-                df = df[z_scores < Z_SCORE_THRESHOLD].copy()  # type: ignore[assignment]
-
-        removed = initial_len - len(df)
-        logger.info(f"Removed {removed} outlier records ({removed / initial_len * 100:.2f}%)")
-
-        return df
-
-    def add_efficacy_labels(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add labels for drug efficacy based on IC50 and AUC thresholds
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            DataFrame with efficacy labels
-        """
-        if "ic50" in df.columns:
-            df["is_effective_ic50"] = df["ic50"] < IC50_THRESHOLD_EFFECTIVE
-
-        if "auc" in df.columns:
-            df["is_effective_auc"] = df["auc"] < AUC_THRESHOLD_EFFECTIVE
-
-        # Combined efficacy (both criteria)
-        if "is_effective_ic50" in df.columns and "is_effective_auc" in df.columns:
-            df["is_effective"] = df["is_effective_ic50"] & df["is_effective_auc"]
-
-        logger.info("Added efficacy labels")
-
-        return df
-
-    def get_drug_summary_statistics(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate summary statistics for each drug
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            DataFrame with drug summary statistics
-        """
-        if "drug_name" not in df.columns:
-            logger.warning("'drug_name' column not found")
-            return pd.DataFrame()
-
-        summary_cols = []
-
-        if "ic50" in df.columns:
-            summary_cols.append("ic50")
-        if "auc" in df.columns:
-            summary_cols.append("auc")
-        if "z_score" in df.columns:
-            summary_cols.append("z_score")
-
-        if not summary_cols:
-            logger.warning("No summary columns found")
-            return pd.DataFrame()
-
-        drug_summary = df.groupby("drug_name")[summary_cols].agg(["mean", "std", "min", "max", "count"])
-        drug_summary.columns = ["_".join(col).strip() for col in drug_summary.columns.values]
-        drug_summary = drug_summary.reset_index()
-
-        logger.info(f"Generated summary statistics for {len(drug_summary)} drugs")
-
-        return drug_summary
-
-    def process_pipeline(self, filter_gbm: bool = True, save_output: bool = True) -> pd.DataFrame:
-        """
-        Complete data processing pipeline
-
-        Args:
-            filter_gbm: Whether to filter for GBM cell lines only
-            save_output: Whether to save processed data to file
-
-        Returns:
-            Processed DataFrame
-        """
-        logger.info("=" * 60)
-        logger.info("Starting GDSC data processing pipeline")
-        logger.info("=" * 60)
-
-        # Load datasets
-        gdsc1, gdsc2 = self.load_gdsc_datasets()
-
-        # Merge datasets
-        merged = self.merge_datasets(gdsc1, gdsc2)
-
-        # Filter for GBM if requested
-        if filter_gbm:
-            merged = self.filter_gbm_cell_lines(merged)
-
-        # Convert LN_IC50 to IC50
-        merged = self.convert_ln_ic50_to_ic50(merged)
-
-        # Handle missing values
-        merged = self.handle_missing_values(merged)
-
-        # Remove outliers
-        merged = self.remove_outliers(merged)
-
-        # Add efficacy labels
-        merged = self.add_efficacy_labels(merged)
-
-        # Save if requested
-        if save_output:
-            logger.info(f"Saving cleaned data to {CLEANED_DATA_FILE}")
-            CLEANED_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-            merged.to_csv(CLEANED_DATA_FILE, index=False)
-
-        logger.info("=" * 60)
-        logger.info("Data processing pipeline complete")
-        logger.info(f"Final dataset shape: {merged.shape}")
-        logger.info("=" * 60)
-
-        return merged
-
-
-def load_processed_data() -> pd.DataFrame:
-    """
-    Load previously processed data
-
-    Returns:
-        Processed DataFrame
-    """
-    if CLEANED_DATA_FILE.exists():
-        logger.info(f"Loading processed data from {CLEANED_DATA_FILE}")
-        return pd.read_csv(CLEANED_DATA_FILE)
-    else:
-        logger.warning(f"Processed data file not found: {CLEANED_DATA_FILE}")
-        logger.info("Running processing pipeline...")
-        loader = GDSCDataLoader()
-        return loader.process_pipeline()
-
-
-if __name__ == "__main__":
-    # Example usage
-    loader = GDSCDataLoader()
-    data = loader.process_pipeline()
-
-    print("\nDataset Info:")
-    print(data.info())
-    print("\nFirst few rows:")
-    print(data.head())
-
-    # Get drug summary statistics
-    drug_summary = loader.get_drug_summary_statistics(data)
-    print("\nDrug Summary Statistics:")
-    print(drug_summary.head(10))
+    summary = per_line.groupby("drug_name").apply(_drug_stats, include_groups=False).reset_index()
+
+    meta = (
+        subset.groupby("drug_name")
+        .agg(
+            n_curves=("ln_ic50", "size"),
+            datasets=("dataset", _join_unique),
+            drug_ids=("drug_id", _join_unique),
+            putative_target=("putative_target", _mode_or_first),
+            pathway_name=("pathway_name", _mode_or_first),
+            frac_ic50_within_range=(
+                "ic50_within_range",
+                lambda s: float(pd.Series(s).dropna().astype(bool).mean()) if s.notna().any() else np.nan,
+            ),
+        )
+        .reset_index()
+    )
+    summary = summary.merge(meta, on="drug_name", how="left")
+    summary["ic50_um_geomean"] = np.exp(summary["ln_ic50_mean"])
+
+    # BH correction over drugs that actually have a test statistic.
+    summary["z_q"] = np.nan
+    testable = summary["z_p"].notna()
+    if testable.any():
+        summary.loc[testable, "z_q"] = multipletests(summary.loc[testable, "z_p"], method="fdr_bh")[1]
+
+    summary["gbm_selective"] = (
+        (summary["z_q"] < fdr) & (summary["z_mean"] <= z_effect) & (summary["n_cell_lines"] >= min_cell_lines)
+    ).fillna(False)
+    summary["potent"] = (summary["ln_ic50_mean"] < potency_threshold).fillna(False)
+
+    ordered = [
+        "drug_name",
+        "drug_ids",
+        "datasets",
+        "putative_target",
+        "pathway_name",
+        "n_curves",
+        "n_cell_lines",
+        "ln_ic50_mean",
+        "ln_ic50_median",
+        "ln_ic50_sd",
+        "ic50_um_geomean",
+        "auc_mean",
+        "frac_ic50_within_range",
+        "z_mean",
+        "z_sd",
+        "z_t",
+        "z_p",
+        "z_q",
+        "gbm_selective",
+        "potent",
+    ]
+    summary = summary[ordered].sort_values("z_mean").reset_index(drop=True)
+    logger.info(
+        "Drug summary: %d drugs, %d GBM-selective at FDR %.2f, %d potent (ln IC50 < %.1f)",
+        len(summary),
+        int(summary["gbm_selective"].sum()),
+        fdr,
+        int(summary["potent"].sum()),
+        potency_threshold,
+    )
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+
+def save_processed(subset: pd.DataFrame, summary: pd.DataFrame) -> None:
+    GBM_DOSE_RESPONSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    subset.to_csv(GBM_DOSE_RESPONSE_FILE, index=False, compression="gzip")
+    summary.to_csv(DRUG_SUMMARY_FILE, index=False, float_format="%.6g")
+    logger.info("Wrote %s and %s", GBM_DOSE_RESPONSE_FILE.name, DRUG_SUMMARY_FILE.name)
+
+
+def load_gbm_dose_response(path: Path = GBM_DOSE_RESPONSE_FILE) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found; run `python scripts/build_gbm_dataset.py`.")
+    return pd.read_csv(path)
+
+
+def load_drug_summary(path: Path = DRUG_SUMMARY_FILE) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found; run `python scripts/build_gbm_dataset.py`.")
+    return pd.read_csv(path)
+
+
+def process_pipeline(
+    paths: Iterable[Path] = (GDSC1_FILE, GDSC2_FILE), save: bool = True
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Raw GDSC files -> (GBM curve subset, per-drug summary)."""
+    raw = load_gdsc_raw(paths)
+    subset = build_gbm_subset(raw)
+    summary = summarize_drugs(subset)
+    if save:
+        save_processed(subset, summary)
+    return subset, summary

@@ -48,6 +48,8 @@ htmlcov/
 
 # Data files (keep structure, ignore large files)
 data/processed/*.csv
+!data/processed/gdsc_gbm_dose_response.csv.gz
+!data/processed/gdsc_gbm_drug_summary.csv
 data/processed/*.pkl
 data/processed/*.h5
 data/processed/*.parquet

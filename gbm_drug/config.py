@@ -91,7 +91,7 @@ GBM_TCGA_LABEL = "GBM"
 # Benjamini-Hochberg correction is the natural test. See docs/METHODS.md.
 SELECTIVITY_FDR = 0.05
 SELECTIVITY_MIN_CELL_LINES = 5  # need enough GBM lines for the t-test to mean anything
-SELECTIVITY_Z_EFFECT = -0.5  # and a minimum effect size, in pan-cancer SDs
+SELECTIVITY_Z_EFFECT = -0.3  # minimum effect size in pan-cancer SDs ("small" by Cohen; 24/542 drugs pass)
 
 # Potency label used for the secondary classification task: mean ln(IC50) below
 # ln(1 µM). Kept as a sensitivity analysis, not the primary endpoint.

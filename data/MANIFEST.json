@@ -1,0 +1,30 @@
+{
+  "gdsc_release": "8.5",
+  "release_date": "2023-10-27",
+  "source": "https://www.cancerrxgene.org/downloads/bulk_download",
+  "base_url": "https://cog.sanger.ac.uk/cancerrxgene/GDSC_release8.5/",
+  "license_note": "GDSC data are released by the Wellcome Sanger Institute / MGH for academic and non-commercial use. See https://www.cancerrxgene.org/legal and cite Yang et al. 2013 (NAR) and Iorio et al. 2016 (Cell).",
+  "downloaded_on": "2026-09-26",
+  "files": {
+    "GDSC1_fitted_dose_response_27Oct23.xlsx": {
+      "sha256": "837b0686500fde75179e490de08f034abd9f882d8b0253d637bafe83e156dafd",
+      "bytes": 29353210,
+      "description": "GDSC1 fitted dose-response (LN_IC50, AUC, Z_SCORE) for 333,161 drug-cell line curves"
+    },
+    "GDSC2_fitted_dose_response_27Oct23.xlsx": {
+      "sha256": "f950a7027be265f8a7a74220a27fd18cbd368485349bd8c2048e88bb1cd07560",
+      "bytes": 21330376,
+      "description": "GDSC2 fitted dose-response for 242,036 drug-cell line curves"
+    },
+    "screened_compounds_rel_8.5.csv": {
+      "sha256": "d3cbb8b595980b36bf92d54af1da1dd995d2e2ce624c7cc70aacf2a754dce782",
+      "bytes": 46414,
+      "description": "Compound annotation: DRUG_ID, DRUG_NAME, SYNONYMS, TARGET, TARGET_PATHWAY (621 compounds)"
+    },
+    "Cell_Lines_Details.xlsx": {
+      "sha256": "5520e779d25469f864de9cc5d42b99bf9632bd346607c0ee6a9ebad7ece17ac3",
+      "bytes": 117316,
+      "description": "Cell line annotation incl. GDSC tissue descriptors and TCGA labels (1,002 lines)"
+    }
+  }
+}
