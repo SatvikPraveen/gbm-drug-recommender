@@ -9,7 +9,7 @@ Classes:
 - ModelComparison: Benchmark 5 classifiers (KNN, RF, SVM, NN, XGBoost)
 
 Usage:
-    from src.models import DrugClusteringAnalyzer, OneClassDrugPredictor
+    from gbm_drug.models import DrugClusteringAnalyzer, OneClassDrugPredictor
     clustering = DrugClusteringAnalyzer()
     predictor = OneClassDrugPredictor()
 """
@@ -17,7 +17,4 @@ Usage:
 from .clustering import DrugClusteringAnalyzer
 from .one_class_svm import OneClassDrugPredictor
 
-__all__ = [
-    'DrugClusteringAnalyzer',
-    'OneClassDrugPredictor'
-]
+__all__ = ["DrugClusteringAnalyzer", "OneClassDrugPredictor"]

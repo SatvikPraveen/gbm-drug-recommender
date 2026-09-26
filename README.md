@@ -607,14 +607,14 @@ Edit `src/config.py` to tune the analysis:
 # Therapeutic thresholds
 IC50_THRESHOLD_EFFECTIVE = 10.0  # μM - adjust based on clinical context
 
-# Similarity cutoffs  
-TANIMOTO_THRESHOLD = 0.7         # 0.0 to 1.0
+# Similarity cutoffs
+TANIMOTO_THRESHOLD = 0.7  # 0.0 to 1.0
 
 # Clustering
-KMEANS_N_CLUSTERS = 5            # Number of drug groups
+KMEANS_N_CLUSTERS = 5  # Number of drug groups
 
 # Machine learning
-SVM_NU = 0.1                     # Outlier sensitivity (0.0 to 1.0)
+SVM_NU = 0.1  # Outlier sensitivity (0.0 to 1.0)
 ```
 
 ### Adding Your Own Drugs
@@ -622,18 +622,18 @@ SVM_NU = 0.1                     # Outlier sensitivity (0.0 to 1.0)
 Extend the analysis with new compounds:
 
 ```python
-from src.feature_extraction import MolecularFeatureExtractor
+from gbm_drug.feature_extraction import MolecularFeatureExtractor
 
 extractor = MolecularFeatureExtractor()
 
 # Add drugs by name (automatically fetches SMILES from PubChem)
-new_drugs = ['Bevacizumab', 'Nivolumab', 'Pembrolizumab']
+new_drugs = ["Bevacizumab", "Nivolumab", "Pembrolizumab"]
 features = extractor.process_drug_list(new_drugs)
 
 # Or provide SMILES directly
 custom_smiles = {
-    'ExperimentalDrug-1': 'CC(C)Cc1ccc(cc1)C(C)C(=O)O',
-    'ExperimentalDrug-2': 'CN1C=NC2=C1C(=O)N(C(=O)N2C)C'
+    "ExperimentalDrug-1": "CC(C)Cc1ccc(cc1)C(C)C(=O)O",
+    "ExperimentalDrug-2": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
 }
 ```
 
@@ -643,14 +643,14 @@ The modular structure makes it easy to build specialized workflows:
 
 ```python
 # Example: Focus only on kinase inhibitors
-from src.data_processing import GDSCDataLoader
-from src.similarity import TanimotoSimilarityAnalyzer
+from gbm_drug.data_processing import GDSCDataLoader
+from gbm_drug.similarity import TanimotoSimilarityAnalyzer
 
 loader = GDSCDataLoader()
 data = loader.process_pipeline()
 
 # Filter for specific drug class
-kinase_inhibitors = data[data['drug_name'].str.contains('tinib')]
+kinase_inhibitors = data[data["drug_name"].str.contains("tinib")]
 
 # Analyze this subset
 analyzer = TanimotoSimilarityAnalyzer()

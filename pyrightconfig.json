@@ -1,6 +1,6 @@
 {
   "include": [
-    "src",
+    "gbm_drug",
     "main.py",
     "dashboard.py"
   ],

@@ -15,11 +15,11 @@ All visualizations saved to results/figures/ in PNG format.
 Interactive Plotly charts available in dashboard.
 
 Usage:
-    from src.utils import VisualizationTools
+    from gbm_drug.utils import VisualizationTools
     viz = VisualizationTools()
     viz.plot_similarity_heatmap(matrix, title, save_name)
 """
 
 from .visualization import VisualizationTools
 
-__all__ = ['VisualizationTools']
+__all__ = ["VisualizationTools"]

@@ -30,12 +30,10 @@ Thumbs.db
 .gitignore
 .gitattributes
 
-# Documentation
-*.md
-!README.md
-LICENSE
+# README.md and LICENSE are required by the package build
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
+docs/
 
 # Testing
 .pytest_cache/

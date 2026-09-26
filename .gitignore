@@ -101,3 +101,7 @@ docs/_templates/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local raw GDSC downloads (re-fetched by scripts/download_gdsc.py; checksums in data/MANIFEST.json)
+data/raw/*.xlsx
+data/genesets/*.gmt
