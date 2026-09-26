@@ -1,27 +1,21 @@
 """
-Similarity Analysis Package
-
-Multi-method molecular similarity computation.
-
-Analyzers:
-- TanimotoSimilarityAnalyzer: Fingerprint-based similarity (Morgan/MACCS)
-- MCSimilarityAnalyzer: Maximum Common Substructure matching
-- GCNSimilarityAnalyzer: Graph Neural Network learned embeddings
-- MolecularGCN: 3-layer GCN architecture for molecular graphs
-
-Each method provides complementary views of drug relationships:
-- Tanimoto: Fast, interpretable, structure-based
-- MCS: Scaffold-focused, identifies conserved fragments
-- GCN: Learned representations, captures complex patterns
-
-Usage:
-    from gbm_drug.similarity import TanimotoSimilarityAnalyzer
-    analyzer = TanimotoSimilarityAnalyzer()
-    matrix = analyzer.build_similarity_matrix(smiles_dict)
+Molecular similarity: fingerprint Tanimoto, maximum common substructure, and
+task-aware GNN embeddings, plus the Mantel test for comparing them.
 """
 
-from .gcn_similarity import GCNSimilarityAnalyzer, MolecularGCN
-from .mcs_similarity import MCSimilarityAnalyzer
-from .tanimoto import TanimotoSimilarityAnalyzer
+from .compare import mantel_test, summarize_matrix, upper_triangle
+from .gnn_similarity import gnn_embeddings, gnn_similarity_matrix
+from .mcs_similarity import mcs_matrix, mcs_similarity
+from .tanimoto import pairs_above, tanimoto_matrix
 
-__all__ = ["TanimotoSimilarityAnalyzer", "MCSimilarityAnalyzer", "GCNSimilarityAnalyzer", "MolecularGCN"]
+__all__ = [
+    "gnn_embeddings",
+    "gnn_similarity_matrix",
+    "mantel_test",
+    "mcs_matrix",
+    "mcs_similarity",
+    "pairs_above",
+    "summarize_matrix",
+    "tanimoto_matrix",
+    "upper_triangle",
+]
