@@ -1,371 +1,254 @@
 """
-End-to-End Graph Neural Network for Drug Efficacy Prediction
+End-to-end graph neural network for drug-level GBM response prediction.
 
-Deep learning model that directly learns from molecular graph structures to predict
-drug efficacy (IC50 values) or effectiveness classification.
+``GNNDrugPredictor`` is a scikit-learn-style estimator that takes a list of SMILES
+strings, builds molecular graphs with RDKit, and trains a GCN or GAT encoder with
+a small MLP head. It plugs into :mod:`gbm_drug.evaluation` on the same folds as
+the tabular models, and exposes :meth:`embed` so the trained encoder can be used
+as a task-aware molecular similarity (see :mod:`gbm_drug.similarity.gnn_similarity`).
 
-Architecture:
-- Multi-layer Graph Convolutional Network (GCN) / Graph Attention Network (GAT)
-- Node features: atom properties (type, degree, hybridization, charge, aromaticity)
-- Edge features: bond properties (type, conjugation, ring membership)
-- Graph-level pooling: global mean/max/add pooling
-- MLP prediction head: regression (IC50) or classification (effective/not effective)
+Training details that matter for reproducibility:
 
-Advantages over traditional ML:
-- No manual feature engineering required
-- Learns end-to-end from SMILES to prediction
-- Captures complex molecular substructures automatically
-- Generalizes to novel molecular scaffolds
+* regression targets are standardised internally (fit on the training fold only);
+* an internal validation split (``validation_split`` of the *training* data) drives
+  early stopping and the learning-rate schedule; the best-validation weights are restored;
+* ``random_state`` seeds torch, the internal split and the data loader shuffling;
+* BatchNorm requires batches of >1 graph, so the last incomplete training batch is
+  dropped when the training set is larger than one batch.
 
-Training:
-- Mini-batch gradient descent with graph batching
-- Adam optimizer with learning rate scheduling
-- Dropout and batch normalization for regularization
-- Early stopping to prevent overfitting
-
-Usage:
-    model = GNNDrugPredictor(task='regression', hidden_dim=128, num_layers=3)
-    model.fit(smiles_list, targets)
-    predictions = model.predict(test_smiles)
+With ~500 molecules this model is small-data deep learning: expect it to be
+competitive with, not clearly better than, fingerprint-based gradient boosting.
 """
 
+from __future__ import annotations
+
 import logging
+import sys
+from collections.abc import Sequence
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from sklearn.base import BaseEstimator
-from sklearn.metrics import accuracy_score, mean_squared_error
 from sklearn.model_selection import train_test_split
-from torch.optim import Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch import nn
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GATConv, GCNConv, global_add_pool, global_max_pool, global_mean_pool
-from tqdm import tqdm
 
+from ..config import (
+    GNN_BATCH_SIZE,
+    GNN_DROPOUT,
+    GNN_EARLY_STOPPING_PATIENCE,
+    GNN_EPOCHS,
+    GNN_HIDDEN_CHANNELS,
+    GNN_LEARNING_RATE,
+    GNN_NUM_GNN_LAYERS,
+    GNN_NUM_MLP_LAYERS,
+    GNN_POOLING,
+    GNN_TYPE,
+    GNN_VALIDATION_SPLIT,
+    GNN_WEIGHT_DECAY,
+    RANDOM_STATE,
+    get_device,
+)
+
+RDLogger.DisableLog("rdApp.*")
 logger = logging.getLogger(__name__)
 
 
-# ==================== MOLECULAR GRAPH UTILITIES ====================
-
-
-def one_hot_encoding(value, choices):
-    """Create one-hot encoding for categorical features."""
-    encoding = [0] * (len(choices) + 1)
-    index = choices.index(value) if value in choices else -1
-    encoding[index] = 1
-    return encoding
-
-
-def get_atom_features(atom):
+def _guard_openmp(device: torch.device) -> None:
     """
-    Extract atom-level features for GNN node representation.
+    Avoid a macOS crash when two OpenMP runtimes are loaded in one process.
 
-    Features:
-    - Atom type (C, N, O, F, P, S, Cl, Br, I, others)
-    - Degree (0-5)
-    - Formal charge (-1, 0, +1)
-    - Hybridization (SP, SP2, SP3, others)
-    - Aromaticity (binary)
-    - Total number of Hydrogens (0-4)
-
-    Returns:
-        List of features (length: ~30)
+    scikit-learn and torch each ship their own libomp; if scikit-learn (or XGBoost/umap,
+    which use it) is imported before torch, torch's CPU scatter kernels segfault when they
+    spin up a thread pool. Pinning torch to one thread sidesteps the clash. Molecular graphs
+    are tiny, so CPU threading buys nothing here anyway. Linux builds share one runtime.
     """
-    atom_types = ["C", "N", "O", "F", "P", "S", "Cl", "Br", "I"]
-    degrees = [0, 1, 2, 3, 4, 5]
-    formal_charges = [-1, 0, 1]
-    hybridizations = [
-        Chem.rdchem.HybridizationType.SP,
-        Chem.rdchem.HybridizationType.SP2,
-        Chem.rdchem.HybridizationType.SP3,
-    ]
-    num_hs = [0, 1, 2, 3, 4]
-
-    features = []
-    features += one_hot_encoding(atom.GetSymbol(), atom_types)
-    features += one_hot_encoding(atom.GetDegree(), degrees)
-    features += one_hot_encoding(atom.GetFormalCharge(), formal_charges)
-    features += one_hot_encoding(atom.GetHybridization(), hybridizations)
-    features.append(int(atom.GetIsAromatic()))
-    features += one_hot_encoding(atom.GetTotalNumHs(), num_hs)
-
-    return features
+    if sys.platform == "darwin" and device.type == "cpu" and torch.get_num_threads() > 1:
+        torch.set_num_threads(1)
 
 
-def get_bond_features(bond):
-    """
-    Extract bond-level features for GNN edge attributes.
+# ---------------------------------------------------------------------------
+# Featurisation
+# ---------------------------------------------------------------------------
 
-    Features:
-    - Bond type (SINGLE, DOUBLE, TRIPLE, AROMATIC)
-    - Conjugation (binary)
-    - Ring membership (binary)
+ATOM_TYPES = ["C", "N", "O", "S", "F", "Cl", "Br", "I", "P", "B", "Si", "Se", "Pt"]
+DEGREES = [0, 1, 2, 3, 4, 5, 6]
+FORMAL_CHARGES = [-2, -1, 0, 1, 2]
+HYBRIDISATIONS = [
+    Chem.rdchem.HybridizationType.SP,
+    Chem.rdchem.HybridizationType.SP2,
+    Chem.rdchem.HybridizationType.SP3,
+    Chem.rdchem.HybridizationType.SP3D,
+    Chem.rdchem.HybridizationType.SP3D2,
+]
+NUM_HS = [0, 1, 2, 3, 4]
+CHIRAL_TAGS = [
+    Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
+    Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW,
+    Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW,
+]
+BOND_TYPES = [
+    Chem.rdchem.BondType.SINGLE,
+    Chem.rdchem.BondType.DOUBLE,
+    Chem.rdchem.BondType.TRIPLE,
+    Chem.rdchem.BondType.AROMATIC,
+]
 
-    Returns:
-        List of features (length: ~6)
-    """
-    bond_types = [
-        Chem.rdchem.BondType.SINGLE,
-        Chem.rdchem.BondType.DOUBLE,
-        Chem.rdchem.BondType.TRIPLE,
-        Chem.rdchem.BondType.AROMATIC,
+
+def _one_hot(value, choices: Sequence) -> list[int]:
+    """One-hot with a trailing 'other' slot for values outside ``choices``."""
+    vec = [0] * (len(choices) + 1)
+    vec[choices.index(value) if value in choices else -1] = 1
+    return vec
+
+
+def atom_features(atom: Chem.Atom) -> list[float]:
+    return [
+        *_one_hot(atom.GetSymbol(), ATOM_TYPES),
+        *_one_hot(atom.GetDegree(), DEGREES),
+        *_one_hot(atom.GetFormalCharge(), FORMAL_CHARGES),
+        *_one_hot(atom.GetHybridization(), HYBRIDISATIONS),
+        *_one_hot(atom.GetTotalNumHs(), NUM_HS),
+        *_one_hot(atom.GetChiralTag(), CHIRAL_TAGS),
+        float(atom.GetIsAromatic()),
+        float(atom.IsInRing()),
+        atom.GetMass() / 100.0,
     ]
 
-    features = []
-    features += one_hot_encoding(bond.GetBondType(), bond_types)
-    features.append(int(bond.GetIsConjugated()))
-    features.append(int(bond.IsInRing()))
 
-    return features
+def bond_features(bond: Chem.Bond) -> list[float]:
+    return [*_one_hot(bond.GetBondType(), BOND_TYPES), float(bond.GetIsConjugated()), float(bond.IsInRing())]
+
+
+NUM_ATOM_FEATURES = len(atom_features(Chem.MolFromSmiles("C").GetAtomWithIdx(0)))
+NUM_BOND_FEATURES = len(bond_features(Chem.MolFromSmiles("CC").GetBondWithIdx(0)))
 
 
 def smiles_to_graph(smiles: str) -> Data | None:
-    """
-    Convert SMILES string to PyTorch Geometric Data object.
-
-    Args:
-        smiles: SMILES representation of molecule
-
-    Returns:
-        PyG Data object with node features, edge indices, and edge attributes
-        Returns None if SMILES is invalid
-    """
+    """Heavy-atom molecular graph as a PyG ``Data``; None if the SMILES does not parse."""
     mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        logger.warning(f"Invalid SMILES: {smiles}")
+    if mol is None or mol.GetNumAtoms() == 0:
         return None
-
-    # Add explicit hydrogens for accurate feature extraction
-    mol = Chem.AddHs(mol)
-
-    # Extract node features
-    atom_features = []
-    for atom in mol.GetAtoms():
-        atom_features.append(get_atom_features(atom))
-
-    x = torch.tensor(atom_features, dtype=torch.float)
-
-    # Extract edge indices and features
-    edge_indices = []
-    edge_features = []
-
+    x = torch.tensor([atom_features(a) for a in mol.GetAtoms()], dtype=torch.float)
+    src, dst, attrs = [], [], []
     for bond in mol.GetBonds():
-        i = bond.GetBeginAtomIdx()
-        j = bond.GetEndAtomIdx()
-
-        # Add edges in both directions (undirected graph)
-        edge_indices.append([i, j])
-        edge_indices.append([j, i])
-
-        bond_feat = get_bond_features(bond)
-        edge_features.append(bond_feat)
-        edge_features.append(bond_feat)
-
-    if len(edge_indices) == 0:
-        # Molecule with single atom (no bonds)
+        i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        feat = bond_features(bond)
+        src += [i, j]
+        dst += [j, i]
+        attrs += [feat, feat]
+    if src:
+        edge_index = torch.tensor([src, dst], dtype=torch.long)
+        edge_attr = torch.tensor(attrs, dtype=torch.float)
+    else:  # single heavy atom, e.g. some metal salts
         edge_index = torch.empty((2, 0), dtype=torch.long)
-        edge_attr = torch.empty((0, 6), dtype=torch.float)
-    else:
-        edge_index = torch.tensor(edge_indices, dtype=torch.long).t().contiguous()
-        edge_attr = torch.tensor(edge_features, dtype=torch.float)
-
+        edge_attr = torch.empty((0, NUM_BOND_FEATURES), dtype=torch.float)
     return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
 
-# ==================== GNN ARCHITECTURES ====================
+# ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
 
 
 class GNNEncoder(nn.Module):
-    """
-    Graph Neural Network encoder for molecular graphs.
+    """Stack of GCN/GAT layers with BatchNorm, ReLU, dropout, then global pooling."""
 
-    Supports multiple GNN layers (GCN or GAT) with skip connections,
-    batch normalization, and dropout.
-    """
+    def __init__(
+        self, in_channels: int, hidden: int, num_layers: int, dropout: float, gnn_type: str, pooling: str
+    ):
+        super().__init__()
+        self.dropout = dropout
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        for i in range(num_layers):
+            in_dim = in_channels if i == 0 else hidden
+            if gnn_type == "gcn":
+                conv = GCNConv(in_dim, hidden)
+            elif gnn_type == "gat":
+                heads = 4
+                conv = GATConv(in_dim, hidden // heads, heads=heads, concat=True, dropout=dropout)
+            else:
+                raise ValueError(f"gnn_type must be 'gcn' or 'gat', got {gnn_type!r}")
+            self.convs.append(conv)
+            self.norms.append(nn.BatchNorm1d(hidden))
+        self.pool = {"mean": global_mean_pool, "max": global_max_pool, "add": global_add_pool}[pooling]
 
+    def forward(self, x, edge_index, batch):
+        for conv, norm in zip(self.convs, self.norms):
+            x = conv(x, edge_index)
+            x = norm(x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        return self.pool(x, batch)
+
+
+class GNNModel(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        hidden_channels: int,
-        num_layers: int,
-        dropout: float = 0.2,
-        gnn_type: str = "gcn",
-        pooling: str = "mean",
+        hidden: int,
+        num_gnn_layers: int,
+        num_mlp_layers: int,
+        dropout: float,
+        gnn_type: str,
+        pooling: str,
+        out_dim: int,
     ):
         super().__init__()
+        self.encoder = GNNEncoder(in_channels, hidden, num_gnn_layers, dropout, gnn_type, pooling)
+        layers: list[nn.Module] = []
+        dim = hidden
+        for _ in range(max(num_mlp_layers - 1, 0)):
+            layers += [nn.Linear(dim, dim // 2), nn.BatchNorm1d(dim // 2), nn.ReLU(), nn.Dropout(dropout)]
+            dim //= 2
+        layers.append(nn.Linear(dim, out_dim))
+        self.head = nn.Sequential(*layers)
 
-        self.num_layers = num_layers
-        self.dropout = dropout
-        self.gnn_type = gnn_type.lower()
-        self.pooling = pooling.lower()
-
-        # GNN layers
-        self.convs = nn.ModuleList()
-        self.batch_norms = nn.ModuleList()
-
-        for i in range(num_layers):
-            in_dim = in_channels if i == 0 else hidden_channels
-
-            if self.gnn_type == "gcn":
-                self.convs.append(GCNConv(in_dim, hidden_channels))
-            elif self.gnn_type == "gat":
-                heads = 4 if i < num_layers - 1 else 1
-                out_dim = hidden_channels // heads if i < num_layers - 1 else hidden_channels
-                self.convs.append(
-                    GATConv(in_dim, out_dim, heads=heads, concat=True if i < num_layers - 1 else False)
-                )
-            else:
-                raise ValueError(f"Unsupported GNN type: {gnn_type}")
-
-            self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
-
-        # Pooling function
-        if self.pooling == "mean":
-            self.pool = global_mean_pool
-        elif self.pooling == "max":
-            self.pool = global_max_pool
-        elif self.pooling == "add":
-            self.pool = global_add_pool
-        else:
-            raise ValueError(f"Unsupported pooling: {pooling}")
-
-    def forward(self, x, edge_index, batch):
-        """
-        Forward pass through GNN layers.
-
-        Args:
-            x: Node features [num_nodes, in_channels]
-            edge_index: Edge connectivity [2, num_edges]
-            batch: Batch assignment vector [num_nodes]
-
-        Returns:
-            Graph-level embeddings [batch_size, hidden_channels]
-        """
-        for i in range(self.num_layers):
-            x = self.convs[i](x, edge_index)
-            x = self.batch_norms[i](x)
-            x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-
-        # Global pooling
-        x = self.pool(x, batch)
-
-        return x
-
-
-class GNNPredictor(nn.Module):
-    """
-    Complete GNN model for drug efficacy prediction.
-
-    Architecture: GNN Encoder -> MLP Head -> Output
-    """
-
-    def __init__(
-        self,
-        node_features: int,
-        hidden_channels: int = 128,
-        num_gnn_layers: int = 3,
-        num_mlp_layers: int = 2,
-        dropout: float = 0.2,
-        gnn_type: str = "gcn",
-        pooling: str = "mean",
-        task: str = "regression",
-    ):
-        super().__init__()
-
-        self.task = task
-
-        # GNN encoder
-        self.encoder = GNNEncoder(
-            in_channels=node_features,
-            hidden_channels=hidden_channels,
-            num_layers=num_gnn_layers,
-            dropout=dropout,
-            gnn_type=gnn_type,
-            pooling=pooling,
-        )
-
-        # MLP prediction head
-        mlp_layers = []
-        for i in range(num_mlp_layers):
-            in_dim = hidden_channels if i == 0 else hidden_channels // 2
-            out_dim = hidden_channels // 2 if i < num_mlp_layers - 1 else (1 if task == "regression" else 2)
-
-            if i < num_mlp_layers - 1:
-                mlp_layers.append(nn.Linear(in_dim, out_dim))
-                mlp_layers.append(nn.BatchNorm1d(out_dim))
-                mlp_layers.append(nn.ReLU())
-                mlp_layers.append(nn.Dropout(dropout))
-            else:
-                mlp_layers.append(nn.Linear(in_dim, out_dim))
-
-        self.mlp = nn.Sequential(*mlp_layers)
+    def embed(self, data):
+        return self.encoder(data.x, data.edge_index, data.batch)
 
     def forward(self, data):
-        """
-        Forward pass.
-
-        Args:
-            data: PyG Batch object containing x, edge_index, batch
-
-        Returns:
-            Predictions [batch_size, 1] for regression or [batch_size, 2] for classification
-        """
-        x = self.encoder(data.x, data.edge_index, data.batch)
-        out = self.mlp(x)
-
-        return out
+        return self.head(self.embed(data))
 
 
-# ==================== SKLEARN-COMPATIBLE WRAPPER ====================
+# ---------------------------------------------------------------------------
+# Estimator
+# ---------------------------------------------------------------------------
 
 
 class GNNDrugPredictor(BaseEstimator):
     """
-    Scikit-learn compatible GNN model for drug efficacy prediction.
+    scikit-learn-compatible GNN on SMILES.
 
-    Can be used in model comparison pipelines alongside traditional ML models.
-    Supports both regression (IC50 prediction) and classification (effective/not effective).
+    Parameters mirror ``gbm_drug.config`` GNN_* settings. ``task`` is "regression"
+    (MSE on standardised targets) or "classification" (binary cross-entropy with
+    positive-class re-weighting for imbalance).
     """
 
     def __init__(
         self,
         task: str = "regression",
-        hidden_channels: int = 128,
-        num_gnn_layers: int = 3,
-        num_mlp_layers: int = 2,
-        dropout: float = 0.2,
-        gnn_type: str = "gcn",
-        pooling: str = "mean",
-        learning_rate: float = 0.001,
-        batch_size: int = 32,
-        epochs: int = 100,
-        early_stopping_patience: int = 10,
+        hidden_channels: int = GNN_HIDDEN_CHANNELS,
+        num_gnn_layers: int = GNN_NUM_GNN_LAYERS,
+        num_mlp_layers: int = GNN_NUM_MLP_LAYERS,
+        dropout: float = GNN_DROPOUT,
+        gnn_type: str = GNN_TYPE,
+        pooling: str = GNN_POOLING,
+        learning_rate: float = GNN_LEARNING_RATE,
+        weight_decay: float = GNN_WEIGHT_DECAY,
+        batch_size: int = GNN_BATCH_SIZE,
+        epochs: int = GNN_EPOCHS,
+        early_stopping_patience: int = GNN_EARLY_STOPPING_PATIENCE,
+        validation_split: float = GNN_VALIDATION_SPLIT,
         device: str = "auto",
-        random_state: int = 42,
+        random_state: int = RANDOM_STATE,
+        verbose: bool = False,
     ):
-        """
-        Initialize GNN model.
-
-        Args:
-            task: 'regression' for IC50 prediction or 'classification' for effectiveness
-            hidden_channels: Hidden dimension size
-            num_gnn_layers: Number of graph convolution layers
-            num_mlp_layers: Number of MLP layers in prediction head
-            dropout: Dropout probability
-            gnn_type: 'gcn' or 'gat'
-            pooling: 'mean', 'max', or 'add'
-            learning_rate: Learning rate for Adam optimizer
-            batch_size: Batch size for training
-            epochs: Maximum number of training epochs
-            early_stopping_patience: Stop if no improvement for N epochs
-            device: 'cpu', 'cuda', or 'auto'
-            random_state: Random seed
-        """
         self.task = task
         self.hidden_channels = hidden_channels
         self.num_gnn_layers = num_gnn_layers
@@ -374,313 +257,207 @@ class GNNDrugPredictor(BaseEstimator):
         self.gnn_type = gnn_type
         self.pooling = pooling
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.batch_size = batch_size
         self.epochs = epochs
         self.early_stopping_patience = early_stopping_patience
-        self.device_str = device
+        self.validation_split = validation_split
+        self.device = device
         self.random_state = random_state
+        self.verbose = verbose
 
-        self.model = None
-        self.optimizer = None
-        self.scheduler = None
-        self.device = None
-        self.smiles_to_idx = {}
-        self.training_history = {"train_loss": [], "val_loss": []}
+    # -- helpers -----------------------------------------------------------
 
-    def _setup_device(self):
-        """Setup computation device (CPU/CUDA/MPS)."""
-        if self.device_str == "auto":
-            if torch.cuda.is_available():
-                self.device = torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
-            else:
-                self.device = torch.device("cpu")
-        else:
-            self.device = torch.device(self.device_str)
-
-        logger.info(f"Using device: {self.device}")
-
-    def _smiles_to_data(self, smiles_list: list[str], targets: np.ndarray | None = None) -> list[Data]:
-        """Convert list of SMILES to list of PyG Data objects."""
-        data_list = []
-
-        for i, smiles in enumerate(tqdm(smiles_list, desc="Converting SMILES to graphs")):
-            graph = smiles_to_graph(smiles)
-            if graph is None:
-                logger.warning(f"Skipping invalid SMILES at index {i}")
+    def _graphs(self, smiles: Sequence[str], y: np.ndarray | None = None) -> tuple[list[Data], np.ndarray]:
+        graphs, kept = [], []
+        for i, smi in enumerate(smiles):
+            g = smiles_to_graph(smi)
+            if g is None:
                 continue
+            if y is not None:
+                g.y = torch.tensor([float(y[i])], dtype=torch.float)
+            graphs.append(g)
+            kept.append(i)
+        return graphs, np.asarray(kept, dtype=int)
 
-            if targets is not None:
-                graph.y = torch.tensor(
-                    [targets[i]], dtype=torch.float if self.task == "regression" else torch.long
-                )
+    def _loss(self, out: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        out = out.view(-1)
+        if self.task == "regression":
+            return F.mse_loss(out, y)
+        return F.binary_cross_entropy_with_logits(out, y, pos_weight=self._pos_weight)
 
-            data_list.append(graph)
+    def _run_epoch(self, loader: DataLoader, train: bool) -> float:
+        self.model_.train(train)
+        total, count = 0.0, 0
+        with torch.set_grad_enabled(train):
+            for batch in loader:
+                batch = batch.to(self.device_)
+                if train:
+                    self.optimizer_.zero_grad()
+                out = self.model_(batch)
+                loss = self._loss(out, batch.y.view(-1))
+                if train:
+                    loss.backward()
+                    self.optimizer_.step()
+                total += float(loss) * batch.num_graphs
+                count += batch.num_graphs
+        return total / max(count, 1)
 
-        return data_list
+    # -- sklearn API -------------------------------------------------------
 
-    def fit(self, X: list[str] | np.ndarray, y: np.ndarray, validation_split: float = 0.1):
-        """
-        Train GNN model.
-
-        Args:
-            X: List of SMILES strings or array of SMILES
-            y: Target values (IC50 for regression, labels for classification)
-            validation_split: Fraction of data to use for validation
-
-        Returns:
-            self
-        """
-        # Setup
+    def fit(self, X: Sequence[str], y: np.ndarray):
+        if self.task not in ("regression", "classification"):
+            raise ValueError("task must be 'regression' or 'classification'")
         torch.manual_seed(self.random_state)
-        self._setup_device()
+        self.device_ = torch.device(get_device(self.device))
+        _guard_openmp(self.device_)
 
-        # Convert to SMILES list if array
-        if isinstance(X, np.ndarray):
-            X = X.tolist()
+        y = np.asarray(y, dtype=float)
+        if self.task == "regression":
+            self.y_mean_, self.y_std_ = float(y.mean()), float(y.std() or 1.0)
+            y_t = (y - self.y_mean_) / self.y_std_
+        else:
+            y_t = y
+            pos = max(float(y.sum()), 1.0)
+            self._pos_weight = torch.tensor([(len(y) - pos) / pos], dtype=torch.float, device=self.device_)
 
-        # Convert SMILES to graphs
-        data_list = self._smiles_to_data(X, y)
+        graphs, kept = self._graphs(list(X), y_t)
+        if len(graphs) < 4:
+            raise ValueError("need at least 4 valid molecules to train")
 
-        if len(data_list) == 0:
-            raise ValueError("No valid SMILES found in input data")
+        strat = (
+            y[kept].astype(int)
+            if self.task == "classification" and 0 < y[kept].sum() < len(kept) - 1
+            else None
+        )
+        try:
+            train_g, val_g = train_test_split(
+                graphs, test_size=self.validation_split, random_state=self.random_state, stratify=strat
+            )
+        except ValueError:  # too few positives to stratify
+            train_g, val_g = train_test_split(
+                graphs, test_size=self.validation_split, random_state=self.random_state
+            )
 
-        # Train/validation split
-        train_data, val_data = train_test_split(
-            data_list, test_size=validation_split, random_state=self.random_state
+        gen = torch.Generator().manual_seed(self.random_state)
+        drop_last = len(train_g) > self.batch_size
+        train_loader = DataLoader(
+            train_g, batch_size=self.batch_size, shuffle=True, drop_last=drop_last, generator=gen
+        )
+        val_loader = DataLoader(val_g, batch_size=max(self.batch_size, 2), shuffle=False)
+
+        self.model_ = GNNModel(
+            NUM_ATOM_FEATURES,
+            self.hidden_channels,
+            self.num_gnn_layers,
+            self.num_mlp_layers,
+            self.dropout,
+            self.gnn_type,
+            self.pooling,
+            out_dim=1,
+        ).to(self.device_)
+        self.optimizer_ = torch.optim.Adam(
+            self.model_.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer_, mode="min", factor=0.5, patience=max(self.early_stopping_patience // 2, 1)
         )
 
-        train_loader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True)
-        val_loader = DataLoader(val_data, batch_size=self.batch_size, shuffle=False)
-
-        # Initialize model
-        node_features = data_list[0].x.shape[1]
-        self.model = GNNPredictor(
-            node_features=node_features,
-            hidden_channels=self.hidden_channels,
-            num_gnn_layers=self.num_gnn_layers,
-            num_mlp_layers=self.num_mlp_layers,
-            dropout=self.dropout,
-            gnn_type=self.gnn_type,
-            pooling=self.pooling,
-            task=self.task,
-        ).to(self.device)
-
-        self.optimizer = Adam(self.model.parameters(), lr=self.learning_rate)
-        self.scheduler = ReduceLROnPlateau(self.optimizer, mode="min", factor=0.5, patience=5)
-
-        # Loss function
-        if self.task == "regression":
-            criterion = nn.MSELoss()
-        else:
-            criterion = nn.CrossEntropyLoss()
-
-        # Training loop
-        best_val_loss = float("inf")
-        patience_counter = 0
-
+        best, best_state, patience = float("inf"), None, 0
+        self.history_ = {"train_loss": [], "val_loss": []}
         for epoch in range(self.epochs):
-            # Training
-            self.model.train()
-            train_loss = 0
-
-            for batch in train_loader:
-                batch = batch.to(self.device)
-                self.optimizer.zero_grad()
-
-                out = self.model(batch)
-
-                if self.task == "regression":
-                    loss = criterion(out.squeeze(), batch.y.squeeze())
-                else:
-                    loss = criterion(out, batch.y.squeeze())
-
-                loss.backward()
-                self.optimizer.step()
-                train_loss += loss.item()
-
-            train_loss /= len(train_loader)
-
-            # Validation
-            self.model.eval()
-            val_loss = 0
-
-            with torch.no_grad():
-                for batch in val_loader:
-                    batch = batch.to(self.device)
-                    out = self.model(batch)
-
-                    if self.task == "regression":
-                        loss = criterion(out.squeeze(), batch.y.squeeze())
-                    else:
-                        loss = criterion(out, batch.y.squeeze())
-
-                    val_loss += loss.item()
-
-            val_loss /= len(val_loader)
-
-            # Learning rate scheduling
-            self.scheduler.step(val_loss)
-
-            # Track history
-            self.training_history["train_loss"].append(train_loss)
-            self.training_history["val_loss"].append(val_loss)
-
-            # Early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                # Save best model
-                self.best_model_state = self.model.state_dict()
+            tr = self._run_epoch(train_loader, train=True)
+            va = self._run_epoch(val_loader, train=False)
+            scheduler.step(va)
+            self.history_["train_loss"].append(tr)
+            self.history_["val_loss"].append(va)
+            if va < best - 1e-6:
+                best, patience = va, 0
+                best_state = {k: v.detach().clone() for k, v in self.model_.state_dict().items()}
             else:
-                patience_counter += 1
-
-            if (epoch + 1) % 10 == 0:
-                logger.info(
-                    f"Epoch {epoch + 1}/{self.epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
-                )
-
-            if patience_counter >= self.early_stopping_patience:
-                logger.info(f"Early stopping at epoch {epoch + 1}")
+                patience += 1
+            if self.verbose and (epoch + 1) % 10 == 0:
+                logger.info("epoch %d train %.4f val %.4f", epoch + 1, tr, va)
+            if patience >= self.early_stopping_patience:
                 break
-
-        # Load best model
-        self.model.load_state_dict(self.best_model_state)
-        logger.info(f"Training completed. Best val loss: {best_val_loss:.4f}")
-
+        if best_state is not None:
+            self.model_.load_state_dict(best_state)
+        self.best_val_loss_ = best
+        self.n_epochs_ = len(self.history_["train_loss"])
         return self
 
-    def predict(self, X: list[str] | np.ndarray) -> np.ndarray:
-        """
-        Make predictions on new data.
-
-        Args:
-            X: List of SMILES strings
-
-        Returns:
-            Predictions array
-        """
-        if self.model is None:
-            raise ValueError("Model not trained yet. Call fit() first.")
-
-        # Convert to SMILES list if array
-        if isinstance(X, np.ndarray):
-            X = X.tolist()
-
-        # Convert SMILES to graphs
-        data_list = self._smiles_to_data(X)
-
-        if len(data_list) == 0:
-            raise ValueError("No valid SMILES found in input data")
-
-        loader = DataLoader(data_list, batch_size=self.batch_size, shuffle=False)
-
-        assert self.model is not None  # Type narrowing for Pylance
-        self.model.eval()
-        predictions = []
-
+    def _forward_all(self, X: Sequence[str], embed: bool = False) -> np.ndarray:
+        if not hasattr(self, "model_"):
+            raise ValueError("call fit() first")
+        graphs, kept = self._graphs(list(X))
+        width = self.hidden_channels if embed else 1
+        out = np.full((len(X), width), np.nan, dtype=float)
+        if not graphs:
+            return out
+        self.model_.eval()
+        loader = DataLoader(graphs, batch_size=max(self.batch_size, 2), shuffle=False)
+        chunks = []
         with torch.no_grad():
             for batch in loader:
-                batch = batch.to(self.device)
-                out = self.model(batch)
+                batch = batch.to(self.device_)
+                chunks.append((self.model_.embed(batch) if embed else self.model_(batch)).cpu().numpy())
+        out[kept] = np.vstack(chunks).reshape(len(kept), width)
+        return out
 
-                if self.task == "regression":
-                    preds = out.squeeze().cpu().numpy()
-                else:
-                    preds = torch.argmax(out, dim=1).cpu().numpy()
-
-                predictions.extend(preds.tolist() if isinstance(preds, np.ndarray) else [preds])
-
-        return np.array(predictions)
-
-    def predict_proba(self, X: list[str] | np.ndarray) -> np.ndarray:
-        """
-        Predict class probabilities (for classification only).
-
-        Args:
-            X: List of SMILES strings
-
-        Returns:
-            Probability array [n_samples, n_classes]
-        """
-        if self.task != "classification":
-            raise ValueError("predict_proba only available for classification tasks")
-
-        if self.model is None:
-            raise ValueError("Model not trained yet. Call fit() first.")
-
-        # Convert to SMILES list if array
-        if isinstance(X, np.ndarray):
-            X = X.tolist()
-
-        # Convert SMILES to graphs
-        data_list = self._smiles_to_data(X)
-
-        if len(data_list) == 0:
-            raise ValueError("No valid SMILES found in input data")
-
-        loader = DataLoader(data_list, batch_size=self.batch_size, shuffle=False)
-
-        assert self.model is not None  # Type narrowing for Pylance
-        self.model.eval()
-        probabilities = []
-
-        with torch.no_grad():
-            for batch in loader:
-                batch = batch.to(self.device)
-                out = self.model(batch)
-                probs = F.softmax(out, dim=1).cpu().numpy()
-                probabilities.append(probs)
-
-        return np.vstack(probabilities)
-
-    def score(self, X: list[str] | np.ndarray, y: np.ndarray) -> float:
-        """
-        Calculate model score (MSE for regression, accuracy for classification).
-
-        Args:
-            X: List of SMILES strings
-            y: True targets
-
-        Returns:
-            Score (negative MSE for regression, accuracy for classification)
-        """
-        predictions = self.predict(X)
-
+    def predict(self, X: Sequence[str]) -> np.ndarray:
+        raw = self._forward_all(X)[:, 0]
         if self.task == "regression":
-            return -mean_squared_error(y, predictions)  # Negative because sklearn expects higher=better
+            pred = raw * self.y_std_ + self.y_mean_
         else:
-            return accuracy_score(y, predictions)
+            pred = (raw >= 0).astype(float)
+        # Unparsable SMILES fall back to the training-set prior so downstream metrics stay defined.
+        fill = self.y_mean_ if self.task == "regression" else 0.0
+        return np.where(np.isnan(pred), fill, pred)
 
-    def save(self, filepath: str):
-        """Save model to file."""
-        save_dict = {
-            "model_state": self.model.state_dict() if self.model else None,
-            "config": {
-                "task": self.task,
-                "hidden_channels": self.hidden_channels,
-                "num_gnn_layers": self.num_gnn_layers,
-                "num_mlp_layers": self.num_mlp_layers,
-                "dropout": self.dropout,
-                "gnn_type": self.gnn_type,
-                "pooling": self.pooling,
+    def predict_proba(self, X: Sequence[str]) -> np.ndarray:
+        if self.task != "classification":
+            raise ValueError("predict_proba is only defined for classification")
+        p = 1 / (1 + np.exp(-self._forward_all(X)[:, 0]))
+        p = np.where(np.isnan(p), 0.5, p)
+        return np.column_stack([1 - p, p])
+
+    def embed(self, X: Sequence[str]) -> np.ndarray:
+        """Graph-level embeddings from the trained encoder (rows of NaN for unparsable SMILES)."""
+        return self._forward_all(X, embed=True)
+
+    # -- persistence -------------------------------------------------------
+
+    def save(self, path) -> None:
+        torch.save(
+            {
+                "params": self.get_params(),
+                "state": self.model_.state_dict(),
+                "y_mean": getattr(self, "y_mean_", None),
+                "y_std": getattr(self, "y_std_", None),
+                "history": self.history_,
             },
-            "training_history": self.training_history,
-        }
-        torch.save(save_dict, filepath)
-        logger.info(f"Model saved to {filepath}")
+            path,
+        )
 
-    def load(self, filepath: str):
-        """Load model from file."""
-        save_dict = torch.load(filepath, map_location=self.device)
-
-        # Restore config
-        for key, value in save_dict["config"].items():
-            setattr(self, key, value)
-
-        # Initialize model (need to know node_features from data)
-        # This will be set during first predict call
-
-        self.training_history = save_dict["training_history"]
-        logger.info(f"Model loaded from {filepath}")
+    @classmethod
+    def load(cls, path, device: str = "auto") -> GNNDrugPredictor:
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        est = cls(**payload["params"])
+        est.device_ = torch.device(get_device(device))
+        _guard_openmp(est.device_)
+        est.model_ = GNNModel(
+            NUM_ATOM_FEATURES,
+            est.hidden_channels,
+            est.num_gnn_layers,
+            est.num_mlp_layers,
+            est.dropout,
+            est.gnn_type,
+            est.pooling,
+            out_dim=1,
+        ).to(est.device_)
+        est.model_.load_state_dict(payload["state"])
+        est.y_mean_, est.y_std_ = payload["y_mean"], payload["y_std"]
+        est.history_ = payload["history"]
+        if est.task == "classification":
+            est._pos_weight = torch.tensor([1.0], device=est.device_)
+        return est

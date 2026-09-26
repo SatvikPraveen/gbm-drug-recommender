@@ -1,399 +1,128 @@
 """
-Drug Clustering Analysis Module
+Unsupervised structure of the drug set: clustering and 2-D embeddings.
 
-Groups drugs by molecular similarity using unsupervised learning.
-
-Algorithms:
-1. KMeans - Centroid-based clustering (k=5)
-2. DBSCAN - Density-based spatial clustering (eps=0.5, min_samples=3)
-3. Hierarchical - Agglomerative clustering with Ward linkage
-
-Dimensionality Reduction:
-- PCA - Principal Component Analysis for feature reduction
-- UMAP - Uniform Manifold Approximation and Projection for visualization
-
-Metrics:
-- Silhouette Score (cluster cohesion)
-- Davies-Bouldin Index (cluster separation)
-- Calinski-Harabasz Score (variance ratio)
-
-Outputs:
-- clustering_results.csv - Cluster assignments for each drug
-- Metrics saved in results dictionary
-- 2D/3D embeddings for visualization
-
-Usage:
-    clustering = DrugClusteringAnalyzer()
-    results = clustering.analyze_all_methods(features_df, feature_cols)
+Clustering is descriptive, not predictive: it shows which drugs are neighbours
+in descriptor space and whether GBM-selective drugs concentrate anywhere.
+K is chosen by silhouette over a range rather than fixed; DBSCAN and Ward
+linkage are run as alternative views. Silhouette, Davies–Bouldin and
+Calinski–Harabasz are reported for each.
 """
+
+from __future__ import annotations
 
 import logging
 
 import numpy as np
 import pandas as pd
-import umap
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from ..config import (
-    CLUSTERING_RESULTS_DIR,
     DBSCAN_EPS,
-    DBSCAN_METRIC,
     DBSCAN_MIN_SAMPLES,
     HIERARCHICAL_LINKAGE,
-    HIERARCHICAL_N_CLUSTERS,
-    KMEANS_MAX_ITER,
-    KMEANS_N_CLUSTERS,
     KMEANS_N_INIT,
-    KMEANS_RANDOM_STATE,
-    UMAP_METRIC,
+    RANDOM_STATE,
     UMAP_MIN_DIST,
     UMAP_N_COMPONENTS,
     UMAP_N_NEIGHBORS,
-    UMAP_RANDOM_STATE,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class DrugClusteringAnalyzer:
-    """Perform clustering analysis on drug features"""
-
-    def __init__(self):
-        """Initialize clustering analyzer"""
-        self.scaler = StandardScaler()
-        self.kmeans_model = None
-        self.dbscan_model = None
-        self.hierarchical_model = None
-        self.scaled_features = None
-
-    def preprocess_features(
-        self, features_df: pd.DataFrame, feature_cols: list[str] | None = None
-    ) -> np.ndarray:
-        """
-        Preprocess and scale features for clustering
-
-        Args:
-            features_df: DataFrame with features
-            feature_cols: List of feature columns to use (None = use all numeric)
-
-        Returns:
-            Scaled feature array
-        """
-        if feature_cols is None:
-            # Use all numeric columns
-            feature_cols = features_df.select_dtypes(include=[np.number]).columns.tolist()
-
-        logger.info(f"Using {len(feature_cols)} features for clustering")
-
-        # Extract features
-        X = features_df[feature_cols].values
-
-        # Handle missing values
-        X = np.nan_to_num(X, nan=0.0)
-
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
-
-        self.scaled_features = X_scaled
-
-        return X_scaled
-
-    def perform_kmeans(
-        self, X: np.ndarray, n_clusters: int = KMEANS_N_CLUSTERS, random_state: int = KMEANS_RANDOM_STATE
-    ) -> tuple[np.ndarray, KMeans]:
-        """
-        Perform K-Means clustering
-
-        Args:
-            X: Feature matrix
-            n_clusters: Number of clusters
-            random_state: Random seed
-
-        Returns:
-            Tuple of (cluster labels, model)
-        """
-        logger.info(f"Performing K-Means clustering with {n_clusters} clusters")
-
-        kmeans = KMeans(
-            n_clusters=n_clusters, max_iter=KMEANS_MAX_ITER, n_init=KMEANS_N_INIT, random_state=random_state
-        )
-
-        labels = kmeans.fit_predict(X)
-
-        self.kmeans_model = kmeans
-
-        logger.info(f"K-Means clustering complete. Inertia: {kmeans.inertia_:.2f}")
-
-        return labels, kmeans
-
-    def perform_dbscan(
-        self, X: np.ndarray, eps: float = DBSCAN_EPS, min_samples: int = DBSCAN_MIN_SAMPLES
-    ) -> tuple[np.ndarray, DBSCAN]:
-        """
-        Perform DBSCAN clustering
-
-        Args:
-            X: Feature matrix
-            eps: Maximum distance between samples
-            min_samples: Minimum samples in a neighborhood
-
-        Returns:
-            Tuple of (cluster labels, model)
-        """
-        logger.info(f"Performing DBSCAN clustering (eps={eps}, min_samples={min_samples})")
-
-        dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric=DBSCAN_METRIC)
-
-        labels = dbscan.fit_predict(X)
-
-        self.dbscan_model = dbscan
-
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        n_noise = list(labels).count(-1)
-
-        logger.info(f"DBSCAN clustering complete. Clusters: {n_clusters}, Noise points: {n_noise}")
-
-        return labels, dbscan
-
-    def perform_hierarchical(
-        self, X: np.ndarray, n_clusters: int = HIERARCHICAL_N_CLUSTERS, linkage: str = HIERARCHICAL_LINKAGE
-    ) -> tuple[np.ndarray, AgglomerativeClustering]:
-        """
-        Perform Hierarchical clustering
-
-        Args:
-            X: Feature matrix
-            n_clusters: Number of clusters
-            linkage: Linkage criterion ('ward', 'complete', 'average', 'single')
-
-        Returns:
-            Tuple of (cluster labels, model)
-        """
-        logger.info(f"Performing Hierarchical clustering with {n_clusters} clusters (linkage={linkage})")
-
-        hierarchical = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage)
-
-        labels = hierarchical.fit_predict(X)
-
-        self.hierarchical_model = hierarchical
-
-        logger.info("Hierarchical clustering complete")
-
-        return labels, hierarchical
-
-    def evaluate_clustering(
-        self, X: np.ndarray, labels: np.ndarray, method_name: str = "Clustering"
-    ) -> dict[str, float]:
-        """
-        Evaluate clustering quality
-
-        Args:
-            X: Feature matrix
-            labels: Cluster labels
-            method_name: Name of clustering method
-
-        Returns:
-            Dictionary with evaluation metrics
-        """
-        # Filter out noise points (label -1) for evaluation
-        mask = labels != -1
-        X_filtered = X[mask]
-        labels_filtered = labels[mask]
-
-        n_clusters = len(set(labels_filtered))
-
-        if n_clusters < 2 or len(labels_filtered) < 2:
-            logger.warning(f"{method_name}: Not enough clusters or samples for evaluation")
-            return {
-                "n_clusters": n_clusters,
-                "silhouette_score": -1,
-                "davies_bouldin_score": -1,
-                "calinski_harabasz_score": -1,
-            }
-
-        metrics = {
+def cluster_metrics(X: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+    mask = labels != -1
+    n_clusters = len(set(labels[mask]))
+    if n_clusters < 2 or mask.sum() < 3:
+        return {
             "n_clusters": n_clusters,
-            "silhouette_score": silhouette_score(X_filtered, labels_filtered),
-            "davies_bouldin_score": davies_bouldin_score(X_filtered, labels_filtered),
-            "calinski_harabasz_score": calinski_harabasz_score(X_filtered, labels_filtered),
+            "n_noise": int((~mask).sum()),
+            "silhouette": np.nan,
+            "davies_bouldin": np.nan,
+            "calinski_harabasz": np.nan,
         }
+    return {
+        "n_clusters": n_clusters,
+        "n_noise": int((~mask).sum()),
+        "silhouette": float(silhouette_score(X[mask], labels[mask])),
+        "davies_bouldin": float(davies_bouldin_score(X[mask], labels[mask])),
+        "calinski_harabasz": float(calinski_harabasz_score(X[mask], labels[mask])),
+    }
 
-        logger.info(f"{method_name} Metrics:")
-        logger.info(f"  Number of clusters: {metrics['n_clusters']}")
-        logger.info(f"  Silhouette Score: {metrics['silhouette_score']:.3f}")
-        logger.info(f"  Davies-Bouldin Score: {metrics['davies_bouldin_score']:.3f}")
-        logger.info(f"  Calinski-Harabasz Score: {metrics['calinski_harabasz_score']:.3f}")
 
-        return metrics
+def choose_k(
+    X: np.ndarray, k_range=range(2, 11), random_state: int = RANDOM_STATE
+) -> tuple[int, pd.DataFrame]:
+    rows = []
+    for k in k_range:
+        labels = KMeans(n_clusters=k, n_init=KMEANS_N_INIT, random_state=random_state).fit_predict(X)
+        rows.append({"k": k, "silhouette": silhouette_score(X, labels)})
+    table = pd.DataFrame(rows)
+    best = int(table.loc[table["silhouette"].idxmax(), "k"])
+    return best, table
 
-    def find_optimal_k(self, X: np.ndarray, k_range: range = range(2, 11)) -> tuple[int, dict]:
-        """
-        Find optimal number of clusters using elbow method and silhouette score
 
-        Args:
-            X: Feature matrix
-            k_range: Range of k values to test
-
-        Returns:
-            Tuple of (optimal k, results dict)
-        """
-        logger.info(f"Finding optimal K using range {k_range}")
-
-        results = {"k_values": [], "inertias": [], "silhouette_scores": []}
-
-        for k in k_range:
-            kmeans = KMeans(n_clusters=k, random_state=KMEANS_RANDOM_STATE, n_init=10)
-            labels = kmeans.fit_predict(X)
-
-            results["k_values"].append(k)
-            results["inertias"].append(kmeans.inertia_)
-            results["silhouette_scores"].append(silhouette_score(X, labels))
-
-        # Find k with best silhouette score
-        optimal_k = results["k_values"][np.argmax(results["silhouette_scores"])]
-
-        logger.info(f"Optimal K: {optimal_k} (Silhouette Score: {max(results['silhouette_scores']):.3f})")
-
-        return optimal_k, results
-
-    def reduce_dimensions_pca(self, X: np.ndarray, n_components: int = 2) -> np.ndarray:
-        """
-        Reduce dimensions using PCA for visualization
-
-        Args:
-            X: Feature matrix
-            n_components: Number of components
-
-        Returns:
-            Reduced feature matrix
-        """
-        pca = PCA(n_components=n_components, random_state=KMEANS_RANDOM_STATE)
-        X_reduced = pca.fit_transform(X)
-
-        logger.info(f"PCA: Explained variance ratio: {pca.explained_variance_ratio_}")
-
-        return X_reduced
-
-    def reduce_dimensions_umap(self, X: np.ndarray, n_components: int = UMAP_N_COMPONENTS) -> np.ndarray:
-        """
-        Reduce dimensions using UMAP for visualization
-
-        Args:
-            X: Feature matrix
-            n_components: Number of components
-
-        Returns:
-            Reduced feature matrix
-        """
-        logger.info("Performing UMAP dimensionality reduction")
+def embed_2d(X: np.ndarray, random_state: int = RANDOM_STATE) -> tuple[np.ndarray, np.ndarray, float]:
+    """PCA and UMAP 2-D coordinates plus PCA explained variance of the two components."""
+    pca = PCA(n_components=2, random_state=random_state)
+    pca_xy = pca.fit_transform(X)
+    try:
+        import umap
 
         reducer = umap.UMAP(
-            n_neighbors=UMAP_N_NEIGHBORS,
+            n_neighbors=min(UMAP_N_NEIGHBORS, len(X) - 1),
             min_dist=UMAP_MIN_DIST,
-            n_components=n_components,
-            metric=UMAP_METRIC,
-            random_state=UMAP_RANDOM_STATE,
-            n_jobs=1,  # Explicitly set to match random_state behavior (reproducibility over parallelism)
+            n_components=UMAP_N_COMPONENTS,
+            random_state=random_state,
+            n_jobs=1,
         )
+        umap_xy = reducer.fit_transform(X)
+    except ImportError:  # umap-learn is optional at runtime
+        umap_xy = np.full((len(X), 2), np.nan)
+    return pca_xy, umap_xy, float(pca.explained_variance_ratio_.sum())
 
-        X_reduced = reducer.fit_transform(X)
 
-        logger.info("UMAP reduction complete")
+def cluster_drugs(
+    features: np.ndarray, drug_names, random_state: int = RANDOM_STATE
+) -> tuple[pd.DataFrame, dict[str, dict[str, float]], pd.DataFrame]:
+    """
+    Standardise, cluster with K-means (silhouette-chosen k), Ward and DBSCAN, and embed in 2-D.
 
-        return X_reduced
+    Returns (assignments table, metrics per method, silhouette-vs-k table).
+    """
+    X = StandardScaler().fit_transform(np.asarray(features, float))
+    k, k_table = choose_k(X, random_state=random_state)
+    kmeans = KMeans(n_clusters=k, n_init=KMEANS_N_INIT, random_state=random_state).fit_predict(X)
+    ward = AgglomerativeClustering(n_clusters=k, linkage=HIERARCHICAL_LINKAGE).fit_predict(X)
+    dbscan = DBSCAN(eps=DBSCAN_EPS, min_samples=DBSCAN_MIN_SAMPLES).fit_predict(X)
+    pca_xy, umap_xy, pca_var = embed_2d(X, random_state)
 
-    def analyze_all_methods(self, features_df: pd.DataFrame, feature_cols: list[str] | None = None) -> dict:
-        """
-        Perform clustering with all methods and compare
-
-        Args:
-            features_df: DataFrame with features
-            feature_cols: List of feature columns to use
-
-        Returns:
-            Dictionary with all results
-        """
-        logger.info("=" * 60)
-        logger.info("Running clustering analysis with all methods")
-        logger.info("=" * 60)
-
-        # Preprocess features
-        X = self.preprocess_features(features_df, feature_cols)
-
-        results = {}
-
-        # K-Means
-        kmeans_labels, kmeans_model = self.perform_kmeans(X)
-        results["kmeans"] = {
-            "labels": kmeans_labels,
-            "model": kmeans_model,
-            "metrics": self.evaluate_clustering(X, kmeans_labels, "K-Means"),
+    table = pd.DataFrame(
+        {
+            "drug_name": list(drug_names),
+            "kmeans_cluster": kmeans,
+            "ward_cluster": ward,
+            "dbscan_cluster": dbscan,
+            "pca_1": pca_xy[:, 0],
+            "pca_2": pca_xy[:, 1],
+            "umap_1": umap_xy[:, 0],
+            "umap_2": umap_xy[:, 1],
         }
-
-        # DBSCAN
-        dbscan_labels, dbscan_model = self.perform_dbscan(X)
-        results["dbscan"] = {
-            "labels": dbscan_labels,
-            "model": dbscan_model,
-            "metrics": self.evaluate_clustering(X, dbscan_labels, "DBSCAN"),
-        }
-
-        # Hierarchical
-        hierarchical_labels, hierarchical_model = self.perform_hierarchical(X)
-        results["hierarchical"] = {
-            "labels": hierarchical_labels,
-            "model": hierarchical_model,
-            "metrics": self.evaluate_clustering(X, hierarchical_labels, "Hierarchical"),
-        }
-
-        # Add dimensionality reductions for visualization
-        results["pca_2d"] = self.reduce_dimensions_pca(X, n_components=2)
-        results["umap_2d"] = self.reduce_dimensions_umap(X, n_components=2)
-
-        logger.info("=" * 60)
-        logger.info("Clustering analysis complete")
-        logger.info("=" * 60)
-
-        return results
-
-    def save_clustering_results(
-        self, features_df: pd.DataFrame, results: dict, filename: str = "clustering_results.csv"
-    ):
-        """
-        Save clustering results to file
-
-        Args:
-            features_df: Original features DataFrame
-            results: Clustering results dictionary
-            filename: Output filename
-        """
-        output_df = features_df.copy()
-
-        # Add cluster labels
-        if "kmeans" in results:
-            output_df["kmeans_cluster"] = results["kmeans"]["labels"]
-
-        if "dbscan" in results:
-            output_df["dbscan_cluster"] = results["dbscan"]["labels"]
-
-        if "hierarchical" in results:
-            output_df["hierarchical_cluster"] = results["hierarchical"]["labels"]
-
-        # Add reduced dimensions
-        if "pca_2d" in results:
-            output_df["pca_1"] = results["pca_2d"][:, 0]
-            output_df["pca_2"] = results["pca_2d"][:, 1]
-
-        if "umap_2d" in results:
-            output_df["umap_1"] = results["umap_2d"][:, 0]
-            output_df["umap_2"] = results["umap_2d"][:, 1]
-
-        # Save to file
-        output_path = CLUSTERING_RESULTS_DIR / filename
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_df.to_csv(output_path, index=False)
-
-        logger.info(f"Clustering results saved to {output_path}")
+    )
+    metrics = {
+        "kmeans": {**cluster_metrics(X, kmeans), "k": k},
+        "ward": cluster_metrics(X, ward),
+        "dbscan": cluster_metrics(X, dbscan),
+        "pca": {"explained_variance_2d": pca_var},
+    }
+    logger.info(
+        "Clustering: k=%d (silhouette %.3f); DBSCAN found %d clusters, %d noise",
+        k,
+        metrics["kmeans"]["silhouette"],
+        metrics["dbscan"]["n_clusters"],
+        metrics["dbscan"]["n_noise"],
+    )
+    return table, metrics, k_table

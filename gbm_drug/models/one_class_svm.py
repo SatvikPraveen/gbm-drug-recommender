@@ -1,367 +1,97 @@
 """
-One-Class SVM Drug Predictor
+One-class novelty scoring, evaluated honestly.
 
-Semi-supervised learning for identifying promising drug candidates.
+A One-Class SVM fitted on the GBM-selective drugs learns the region of descriptor
+space they occupy; other drugs are scored by how far inside that region they
+fall. This is an *exploratory* ranking, kept for continuity with earlier versions
+of the project, and it is weaker than the supervised models in :mod:`zoo`.
 
-Approach:
-- Trains only on effective drugs (positive examples)
-- No negative examples required
-- Learns boundary around effective drug feature space
-- Predicts whether new drugs fall within this boundary
-
-Algorithm:
-- One-Class SVM with RBF kernel
-- Hyperparameter tuning via GridSearchCV
-- Cross-validation for model robustness
-- Decision function provides confidence scores
-
-Outputs:
-- drug_predictions.csv - All drugs with decision scores
-- one_class_svm_model.pkl - Trained model
-- is_promising flag for top candidates
-
-Usage:
-    predictor = OneClassDrugPredictor()
-    predictor.fit(X_train, feature_names)
-    predictions = predictor.identify_promising_drugs(features_df, feature_cols)
+The earlier implementation scored the training drugs with the model trained on
+them and reported them as "13 promising candidates". Here every drug receives an
+**out-of-fold** score: positives are scored by a model that never saw them, and
+the ranking quality is reported as ROC-AUC / PR-AUC of positives vs the rest.
 """
+
+from __future__ import annotations
 
 import logging
 
-import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GroupKFold
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
 
-from ..config import (
-    CV_FOLDS,
-    MODEL_RESULTS_DIR,
-    RANDOM_STATE,
-    SVM_GAMMA,
-    SVM_KERNEL,
-    SVM_NU,
-)
+from ..config import CV_FOLDS, RANDOM_STATE, SVM_GAMMA, SVM_KERNEL, SVM_NU
+from ..evaluation import classification_metrics
 
 logger = logging.getLogger(__name__)
 
 
-class OneClassDrugPredictor:
-    """One-Class SVM for identifying effective drugs"""
+def _make_ocsvm(kernel: str, nu: float, gamma) -> object:
+    return make_pipeline(StandardScaler(), OneClassSVM(kernel=kernel, nu=nu, gamma=gamma))
 
-    def __init__(self, kernel: str = SVM_KERNEL, nu: float = SVM_NU, gamma: str = SVM_GAMMA):
-        """
-        Initialize One-Class SVM predictor
 
-        Args:
-            kernel: Kernel type ('rbf', 'linear', 'poly', 'sigmoid')
-            nu: Upper bound on fraction of outliers
-            gamma: Kernel coefficient
-        """
-        self.kernel = kernel
-        self.nu = nu
-        self.gamma = gamma
-        self.model = None
-        self.scaler = StandardScaler()
-        self.feature_names = None
+def novelty_scores(
+    X: np.ndarray,
+    positive: np.ndarray,
+    groups: np.ndarray,
+    n_splits: int = CV_FOLDS,
+    kernel: str = SVM_KERNEL,
+    nu: float = SVM_NU,
+    gamma=SVM_GAMMA,
+    random_state: int = RANDOM_STATE,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """
+    Out-of-fold One-Class SVM decision scores for every row.
 
-    def fit(self, X: np.ndarray, feature_names: list[str] | None = None):
-        """
-        Fit One-Class SVM on positive examples (effective drugs)
-
-        Args:
-            X: Feature matrix (positive examples only)
-            feature_names: List of feature names
-        """
-        logger.info(f"Training One-Class SVM with {len(X)} positive examples")
-        logger.info(f"Parameters: kernel={self.kernel}, nu={self.nu}, gamma={self.gamma}")
-
-        self.feature_names = feature_names
-
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
-
-        # Train model
-        self.model = OneClassSVM(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
-
-        self.model.fit(X_scaled)
-
-        # Get training predictions
-        train_predictions = self.model.predict(X_scaled)
-        n_inliers = np.sum(train_predictions == 1)
-        n_outliers = np.sum(train_predictions == -1)
-
-        logger.info("Training complete:")
-        logger.info(f"  Inliers: {n_inliers} ({n_inliers / len(X) * 100:.1f}%)")
-        logger.info(f"  Outliers: {n_outliers} ({n_outliers / len(X) * 100:.1f}%)")
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """
-        Predict whether drugs are effective
-
-        Args:
-            X: Feature matrix
-
-        Returns:
-            Predictions (1 = effective/inlier, -1 = not effective/outlier)
-        """
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-
-        X_scaled = self.scaler.transform(X)
-        predictions = self.model.predict(X_scaled)
-
-        return predictions
-
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """
-        Get decision function scores (higher = more similar to training data)
-
-        Args:
-            X: Feature matrix
-
-        Returns:
-            Decision scores
-        """
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-
-        X_scaled = self.scaler.transform(X)
-        scores = self.model.decision_function(X_scaled)
-
-        return scores
-
-    def score_samples(self, X: np.ndarray) -> np.ndarray:
-        """
-        Compute the decision function for samples
-
-        Args:
-            X: Feature matrix
-
-        Returns:
-            Decision scores
-        """
-        return self.predict_proba(X)
-
-    def identify_promising_drugs(
-        self,
-        drug_features_df: pd.DataFrame,
-        feature_cols: list[str],
-        drug_name_col: str = "drug_name",
-        score_threshold: float = 0.0,
-    ) -> pd.DataFrame:
-        """
-        Identify promising drugs from a dataset
-
-        Args:
-            drug_features_df: DataFrame with drug features
-            feature_cols: List of feature columns to use
-            drug_name_col: Name of drug name column
-            score_threshold: Minimum decision score threshold
-
-        Returns:
-            DataFrame with predictions and scores
-        """
-        logger.info(f"Identifying promising drugs from {len(drug_features_df)} candidates")
-
-        # Extract features
-        X = drug_features_df[feature_cols].values
-        X = np.nan_to_num(X, nan=0.0)
-
-        # Get predictions and scores
-        predictions = self.predict(X)
-        scores = self.predict_proba(X)
-
-        # Create results dataframe
-        results_df = drug_features_df[[drug_name_col]].copy()
-        results_df["prediction"] = predictions
-        results_df["decision_score"] = scores
-        results_df["is_promising"] = (predictions == 1) & (scores >= score_threshold)
-
-        # Sort by decision score (descending)
-        results_df = results_df.sort_values("decision_score", ascending=False)
-
-        n_promising = results_df["is_promising"].sum()
-        logger.info(f"Found {n_promising} promising drugs ({n_promising / len(results_df) * 100:.1f}%)")
-
-        return results_df
-
-    def cross_validate(self, X: np.ndarray, cv: int = CV_FOLDS) -> dict[str, float]:
-        """
-        Perform cross-validation
-
-        Args:
-            X: Feature matrix
-            cv: Number of cross-validation folds
-
-        Returns:
-            Dictionary with CV metrics
-        """
-        logger.info(f"Performing {cv}-fold cross-validation")
-
-        X_scaled = self.scaler.fit_transform(X)
-
-        model = OneClassSVM(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
-
-        # For One-Class SVM, we can compute novelty detection accuracy
-        # by treating all training samples as inliers
-        scores = []
-
-        from sklearn.model_selection import KFold
-
-        kfold = KFold(n_splits=cv, shuffle=True, random_state=RANDOM_STATE)
-
-        for train_idx, val_idx in kfold.split(X_scaled):
-            X_train = X_scaled[train_idx]
-            X_val = X_scaled[val_idx]
-
-            model.fit(X_train)
-            val_pred = model.predict(X_val)
-
-            # Accuracy: percentage of validation samples classified as inliers
-            accuracy = np.sum(val_pred == 1) / len(val_pred)
-            scores.append(accuracy)
-
-        cv_results = {"mean_accuracy": np.mean(scores), "std_accuracy": np.std(scores), "scores": scores}
-
-        logger.info(f"CV Accuracy: {cv_results['mean_accuracy']:.3f} ± {cv_results['std_accuracy']:.3f}")
-
-        return cv_results
-
-    def grid_search(
-        self, X: np.ndarray, param_grid: dict | None = None
-    ) -> tuple["OneClassDrugPredictor", dict]:
-        """
-        Perform grid search for hyperparameter tuning
-
-        Args:
-            X: Feature matrix
-            param_grid: Parameter grid to search
-
-        Returns:
-            Tuple of (best model, grid search results)
-        """
-        if param_grid is None:
-            param_grid = {
-                "kernel": ["rbf", "poly", "sigmoid"],
-                "nu": [0.01, 0.05, 0.1, 0.2],
-                "gamma": ["scale", "auto"],
-            }
-
-        logger.info("Performing grid search for hyperparameter tuning")
-        logger.info(f"Parameter grid: {param_grid}")
-
-        X_scaled = self.scaler.fit_transform(X)
-
-        base_model = OneClassSVM()
-
-        # Custom scoring: percentage of samples classified as inliers
-        def custom_scorer(estimator, X):
-            predictions = estimator.predict(X)
-            return np.sum(predictions == 1) / len(predictions)
-
-        grid_search = GridSearchCV(
-            base_model, param_grid, scoring=custom_scorer, cv=CV_FOLDS, verbose=1, n_jobs=-1
+    Positives are split into grouped folds; for each fold the model is fitted on the
+    remaining positives and scores (a) the held-out positives and (b) a matching
+    share of the negatives, so each row is scored exactly once by a model that did
+    not train on it. Higher = more like the positive set.
+    """
+    X = np.asarray(X, float)
+    positive = np.asarray(positive, bool)
+    pos_idx = np.where(positive)[0]
+    neg_idx = np.where(~positive)[0]
+    if len(pos_idx) < n_splits:
+        raise ValueError(
+            f"need at least {n_splits} positives for {n_splits}-fold novelty scoring, got {len(pos_idx)}"
         )
 
-        grid_search.fit(X_scaled)
+    scores = np.full(len(X), np.nan)
+    pos_folds = list(
+        GroupKFold(n_splits=n_splits, shuffle=True, random_state=random_state).split(
+            pos_idx, groups=groups[pos_idx]
+        )
+    )
+    neg_folds = np.array_split(np.random.default_rng(random_state).permutation(neg_idx), n_splits)
+    for (train_p, test_p), test_n in zip(pos_folds, neg_folds):
+        model = _make_ocsvm(kernel, nu, gamma).fit(X[pos_idx[train_p]])
+        held = np.concatenate([pos_idx[test_p], test_n])
+        scores[held] = model.decision_function(X[held])
 
-        logger.info(f"Best parameters: {grid_search.best_params_}")
-        logger.info(f"Best score: {grid_search.best_score_:.3f}")
+    # Rank-based metrics: how well do OOF scores separate positives from the rest?
+    valid = ~np.isnan(scores)
+    metrics = classification_metrics(positive[valid].astype(int), _to_unit(scores[valid]))
+    logger.info(
+        "One-class novelty: OOF ROC-AUC %.3f, PR-AUC %.3f (%d positives)",
+        metrics["roc_auc"],
+        metrics["pr_auc"],
+        len(pos_idx),
+    )
+    return scores, metrics
 
-        # Update model with best parameters
-        self.kernel = grid_search.best_params_["kernel"]
-        self.nu = grid_search.best_params_["nu"]
-        self.gamma = grid_search.best_params_["gamma"]
-        self.model = grid_search.best_estimator_
 
-        results = {
-            "best_params": grid_search.best_params_,
-            "best_score": grid_search.best_score_,
-            "cv_results": grid_search.cv_results_,
-        }
+def _to_unit(x: np.ndarray) -> np.ndarray:
+    lo, hi = np.nanmin(x), np.nanmax(x)
+    return (x - lo) / (hi - lo) if hi > lo else np.full_like(x, 0.5)
 
-        return self, results
 
-    def get_feature_importance(self, X: np.ndarray) -> pd.DataFrame:
-        """
-        Get approximate feature importance based on support vectors
-
-        Args:
-            X: Feature matrix
-
-        Returns:
-            DataFrame with feature importance scores
-        """
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-
-        if self.feature_names is None:
-            logger.warning("Feature names not provided")
-            feature_names = [f"feature_{i}" for i in range(X.shape[1])]
-        else:
-            feature_names = self.feature_names
-
-        # For RBF kernel, we can look at dual coefficients and support vectors
-        if hasattr(self.model, "support_vectors_"):
-            # Use variance of support vectors as proxy for importance
-            sv = self.model.support_vectors_
-            importance = np.var(sv, axis=0)
-
-            importance_df = pd.DataFrame({"feature": feature_names, "importance": importance})
-            importance_df = importance_df.sort_values("importance", ascending=False)
-
-            return importance_df
-        else:
-            logger.warning("Support vectors not available")
-            return pd.DataFrame()
-
-    def save_model(self, filepath: str = None):
-        """
-        Save trained model to file
-
-        Args:
-            filepath: Output file path
-        """
-        if filepath is None:
-            filepath = MODEL_RESULTS_DIR / "one_class_svm_model.pkl"
-
-        if self.model is None:
-            logger.warning("No model to save")
-            return
-
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-
-        model_data = {
-            "model": self.model,
-            "scaler": self.scaler,
-            "kernel": self.kernel,
-            "nu": self.nu,
-            "gamma": self.gamma,
-            "feature_names": self.feature_names,
-        }
-
-        joblib.dump(model_data, filepath)
-        logger.info(f"Model saved to {filepath}")
-
-    def load_model(self, filepath: str = None):
-        """
-        Load trained model from file
-
-        Args:
-            filepath: Model file path
-        """
-        if filepath is None:
-            filepath = MODEL_RESULTS_DIR / "one_class_svm_model.pkl"
-
-        model_data = joblib.load(filepath)
-
-        self.model = model_data["model"]
-        self.scaler = model_data["scaler"]
-        self.kernel = model_data["kernel"]
-        self.nu = model_data["nu"]
-        self.gamma = model_data["gamma"]
-        self.feature_names = model_data.get("feature_names")
-
-        logger.info(f"Model loaded from {filepath}")
+def novelty_table(drug_names, scores: np.ndarray, positive: np.ndarray) -> pd.DataFrame:
+    out = pd.DataFrame(
+        {"drug_name": list(drug_names), "novelty_score": scores, "is_positive": np.asarray(positive, bool)}
+    )
+    out["rank"] = out["novelty_score"].rank(ascending=False, method="min").astype("Int64")
+    return out.sort_values("novelty_score", ascending=False).reset_index(drop=True)
