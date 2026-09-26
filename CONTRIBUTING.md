@@ -1,215 +1,48 @@
-# Contributing to GBM Drug Analysis and Recommendation
+# Contributing
 
-Thank you for your interest in contributing to this project! This guide will help you get started.
+Thanks for your interest. This project values correctness over feature count:
+a smaller analysis whose claims survive scrutiny beats a larger one that does not.
 
-## Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [How to Contribute](#how-to-contribute)
-- [Coding Standards](#coding-standards)
-- [Testing](#testing)
-- [Submitting Changes](#submitting-changes)
-- [Project Structure](#project-structure)
-
-## Code of Conduct
-
-Please be respectful and constructive in all interactions. We aim to foster an inclusive and collaborative environment.
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8 or higher
-- pip or conda package manager
-- Git for version control
-
-### Development Setup
-
-1. **Fork and Clone the Repository**
-   ```bash
-   git clone https://github.com/yourusername/GBM_drug_analysis_and_recommendation.git
-   cd GBM_drug_analysis_and_recommendation
-   ```
-
-2. **Set Up Virtual Environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Run Setup Script** (if needed)
-   ```bash
-   bash setup.sh
-   ```
-
-## How to Contribute
-
-### Reporting Bugs
-
-- Use the GitHub issue tracker
-- Include a clear description of the problem
-- Provide steps to reproduce the issue
-- Include error messages and stack traces if applicable
-- Specify your Python version and OS
-
-### Suggesting Enhancements
-
-- Open an issue with the tag "enhancement"
-- Clearly describe the proposed feature
-- Explain why this enhancement would be useful
-- Provide examples if possible
-
-### Pull Requests
-
-1. Create a new branch for your feature or fix:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make your changes following the coding standards
-
-3. Test your changes thoroughly
-
-4. Commit your changes with clear, descriptive messages:
-   ```bash
-   git commit -m "Add feature: description of what you added"
-   ```
-
-5. Push to your fork:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-6. Open a Pull Request with a clear title and description
-
-## Coding Standards
-
-### Python Style Guide
-
-- Follow [PEP 8](https://pep8.org/) style guidelines
-- Use meaningful variable and function names
-- Add docstrings to all functions, classes, and modules
-- Keep functions focused and concise (ideally < 50 lines)
-- Use type hints where appropriate
-
-### Example Function Documentation
-
-```python
-def predict_drug_efficacy(drug_name: str, cell_line: str) -> float:
-    """
-    Predict drug efficacy for a given cell line.
-    
-    Args:
-        drug_name: Name of the drug to test
-        cell_line: Cell line identifier
-        
-    Returns:
-        Predicted IC50 value
-        
-    Raises:
-        ValueError: If drug or cell line not found in dataset
-    """
-    pass
-```
-
-### Code Organization
-
-- Place data processing functions in `src/data_processing.py`
-- Add new models to `src/models/`
-- Utility functions go in `src/utils/`
-- Keep configuration in `src/config.py`
-
-## Testing
-
-### Running Tests
+## Setup
 
 ```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific test file
-python -m pytest tests/test_models.py
-
-# Run with coverage
-python -m pytest --cov=src tests/
+./setup.sh                      # creates .venv and installs the package with dev extras
+source .venv/bin/activate
+pytest                          # ~15 s; GNN tests run on CPU
+python main.py --quick          # ~2 min smoke run of every stage
 ```
 
-### Writing Tests
+The committed data tables are enough to run everything; the raw GDSC files are
+only needed to regenerate them (`python scripts/download_gdsc.py`).
 
-- Add tests for all new features
-- Place test files in a `tests/` directory
-- Use descriptive test function names: `test_feature_description()`
-- Aim for high code coverage (>80%)
+## Ground rules
 
-## Submitting Changes
+- **No leakage.** Any new model must be evaluated through
+  `gbm_drug.evaluation.run_benchmark` so it shares folds and baselines with
+  the others. If you need a new split strategy, add it to `iter_splits` and a
+  test that `assert_no_group_leakage` holds.
+- **Baselines and nulls.** A reported score without its dummy baseline and,
+  for the headline model, a y-scrambling p-value is not a result.
+- **No hand-edited results.** `results/RESULTS.md` is generated; change the
+  code or the config and re-run. `docs/RESULTS.md` is where interpretation goes.
+- **Configuration, not constants.** Thresholds live in `gbm_drug/config.py`
+  and are justified in `docs/METHODS.md`. If you change one, update both.
+- **Data provenance.** New external data needs an entry in `data/MANIFEST.json`
+  (URL, checksum, licence) and a script that fetches it.
+- **Tests and lint.** `ruff check . && ruff format --check . && pytest` must
+  pass; CI runs them on Python 3.11 and 3.12 with CPU torch.
 
-### Checklist Before Submitting
+## Good first contributions
 
-- [ ] Code follows the project's style guidelines
-- [ ] All tests pass
-- [ ] New tests added for new features
-- [ ] Documentation updated if needed
-- [ ] No unnecessary files or debugging code included
-- [ ] Commit messages are clear and descriptive
+- Nested cross-validation for hyper-parameter tuning (currently fixed a priori).
+- Batch-correcting ln IC50 between GDSC1 and GDSC2.
+- Curated pharmacokinetic annotations for the interaction screen.
+- More gene-set libraries or a better target-to-gene alias table
+  (`gbm_drug/pathway_analysis.py`; see `results/pathways/unmapped_targets.csv`).
+- Multi-omics features per cell line (expression, mutation) for a
+  drug × cell-line model, with cell-line-grouped folds.
 
-### Commit Message Guidelines
+## Reporting problems
 
-- Use present tense ("Add feature" not "Added feature")
-- Use imperative mood ("Move cursor to..." not "Moves cursor to...")
-- First line should be concise (50 chars or less)
-- Reference issues and pull requests when relevant
-
-Examples:
-```
-Add drug combination analysis module
-Fix issue with missing SMILES data handling
-Update pathway enrichment analysis algorithm
-Refactor model comparison code for better performance
-```
-
-## Project Structure
-
-```
-GBM_drug_analysis_and_recommendation/
-├── src/                      # Source code
-│   ├── models/              # Machine learning models
-│   ├── similarity/          # Drug similarity algorithms
-│   └── utils/               # Utility functions
-├── data/                    # Data files (raw and processed)
-├── notebooks/               # Jupyter notebooks for exploration
-├── results/                 # Analysis results and outputs
-├── main.py                  # Main execution script
-├── dashboard.py             # Visualization dashboard
-└── requirements.txt         # Python dependencies
-```
-
-### Key Modules
-
-- **data_processing.py**: Data cleaning and preprocessing
-- **feature_extraction.py**: Molecular feature extraction
-- **pathway_analysis.py**: Pathway enrichment analysis
-- **drug_interactions.py**: Drug interaction prediction
-- **combination_therapy.py**: Combination therapy recommendations
-
-## Data Guidelines
-
-- Do not commit large data files to the repository
-- Place data files in `data/raw/` or `data/processed/`
-- Update `data/README.md` with information about new datasets
-- Use relative paths in code for portability
-
-## Questions?
-
-If you have questions or need help, please:
-- Open an issue on GitHub
-- Review existing issues and pull requests
-- Check the README.md for project documentation
-
-Thank you for contributing to GBM drug analysis research! 🎉
+Open an issue with the command you ran, `results/metadata.json` if a run was
+involved, and the relevant part of `pipeline.log`.

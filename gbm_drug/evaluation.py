@@ -355,11 +355,8 @@ def best_models(summary: pd.DataFrame, tasks: Iterable[Task]) -> pd.DataFrame:
         cand = g[(g["metric"] == metric) & (g["model"] != "Baseline")]
         if cand.empty:
             continue
-        best = (
-            cand.sort_values("mean", ascending=HIGHER_IS_BETTER.get(metric, True) is False).iloc[-1]
-            if HIGHER_IS_BETTER.get(metric, True)
-            else cand.sort_values("mean").iloc[0]
-        )
+        higher = HIGHER_IS_BETTER.get(metric, True)
+        best = cand.loc[cand["mean"].idxmax()] if higher else cand.loc[cand["mean"].idxmin()]
         base = g[(g["metric"] == metric) & (g["model"] == "Baseline")]
         out.append(
             {

@@ -1,570 +1,214 @@
 """
-Interactive Streamlit Dashboard for GBM Drug Analysis
+Streamlit dashboard over the pipeline's result tables.
 
-Provides a comprehensive web interface for exploring the complete pipeline results:
-
-Features:
-- Overview - Summary statistics and key metrics
-- Drug Predictions - Rankings with decision scores and promising candidates
-- Drug Similarity - Interactive heatmaps for Tanimoto, MCS, GCN similarity
-- Combination Therapy - Top drug pairs with synergy scores and rationales
-- Pathway Analysis - Enriched pathways across KEGG, Reactome, BioPlanet, GO
-- Model Comparison - Performance metrics for 5 ML models
-- Drug Interactions - Safety profiles and severity classifications
-
-Launch:
     streamlit run dashboard.py
-    # Opens at http://localhost:8501
 
-Requirements:
-- Pipeline must be executed first (main.py) to generate results
-- All visualizations load from results/ directory
+Every view reads from results/ (run `python main.py` first). The dashboard adds
+no analysis of its own, so what it shows is exactly what RESULTS.md reports.
 """
 
-import sys
+from __future__ import annotations
+
+import json
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gbm_drug import config as cfg
 
-from gbm_drug.config import RESULTS_DIR
-
-# Page configuration
-st.set_page_config(
-    page_title="GBM Drug Analysis Dashboard", page_icon="🧬", layout="wide", initial_sidebar_state="expanded"
-)
-
-# Custom CSS
-st.markdown(
-    """
-<style>
-    .main-header {
-        font-size: 3rem;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #ff7f0e;
-        margin-top: 2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
+st.set_page_config(page_title="GBM drug response — GDSC", page_icon="🧬", layout="wide")
 
 
 @st.cache_data
-def load_predictions():
-    """Load drug predictions."""
-    pred_file = RESULTS_DIR / "models" / "drug_predictions.csv"
-    if pred_file.exists():
-        return pd.read_csv(pred_file)
-    return None
+def read_csv(path: Path, **kw) -> pd.DataFrame | None:
+    return pd.read_csv(path, **kw) if path.exists() else None
 
 
 @st.cache_data
-def load_similarity_data():
-    """Load similarity matrices."""
-    sim_dir = RESULTS_DIR / "similarity"
-
-    similarities = {}
-    for method in ["tanimoto", "mcs", "gcn"]:
-        sim_file = sim_dir / f"{method}_similarity_matrix.csv"
-        if sim_file.exists():
-            similarities[method] = pd.read_csv(sim_file, index_col=0)
-
-    return similarities
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text()) if path.exists() else {}
 
 
-@st.cache_data
-def load_combination_therapy():
-    """Load combination therapy analysis."""
-    combo_file = RESULTS_DIR / "combination_therapy" / "drug_combinations.csv"
-    if combo_file.exists():
-        return pd.read_csv(combo_file)
-    return None
+summary = read_csv(cfg.DRUG_SUMMARY_FILE)
+scores = read_csv(cfg.MODEL_RESULTS_DIR / "drug_scores.csv")
+bench = read_csv(cfg.BENCHMARK_RESULTS_DIR / "summary.csv")
+best = read_csv(cfg.BENCHMARK_RESULTS_DIR / "best_models.csv")
+oof = read_csv(cfg.BENCHMARK_RESULTS_DIR / "oof_predictions.csv")
+scramble = read_json(cfg.BENCHMARK_RESULTS_DIR / "y_scrambling_summary.json")
+pairs = read_csv(cfg.COMBINATION_RESULTS_DIR / "pair_scores.csv")
+screen = read_csv(cfg.INTERACTION_RESULTS_DIR / "interaction_screen.csv")
+enrich = read_csv(cfg.PATHWAY_RESULTS_DIR / "enrichment_selective_vs_screened.csv")
+sim_summary = read_json(cfg.SIMILARITY_RESULTS_DIR / "similarity_summary.json")
+meta = read_json(cfg.RESULTS_DIR / "metadata.json")
 
-
-@st.cache_data
-def load_pathway_data():
-    """Load pathway enrichment results."""
-    pathway_file = RESULTS_DIR / "pathways" / "pathway_enrichment_summary.csv"
-    if pathway_file.exists():
-        return pd.read_csv(pathway_file)
-    return None
-
-
-@st.cache_data
-def load_model_comparison():
-    """Load model comparison results."""
-    model_file = RESULTS_DIR / "models" / "model_comparison_results.csv"
-    if model_file.exists():
-        return pd.read_csv(model_file)
-    return None
-
-
-def main():
-    """Main dashboard function."""
-
-    # Header
-    st.markdown('<h1 class="main-header">🧬 GBM Drug Analysis Dashboard</h1>', unsafe_allow_html=True)
-    st.markdown("### Precision Oncology Through Machine Learning")
-
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio(
-        "Select Analysis",
-        [
-            "Overview",
-            "Drug Predictions",
-            "Drug Similarity",
-            "Combination Therapy",
-            "Pathway Analysis",
-            "Model Comparison",
-        ],
+st.title("GBM drug response from GDSC: structure, selectivity, combinations")
+if meta:
+    st.caption(
+        f"Run {meta.get('timestamp_utc', '')} · commit {str(meta.get('git_commit', ''))[:8]} · GDSC release {cfg.GDSC_RELEASE}"
     )
 
-    # Load data
-    predictions = load_predictions()
-    similarities = load_similarity_data()
-    combinations = load_combination_therapy()
-    pathways = load_pathway_data()
-    models = load_model_comparison()
+page = st.sidebar.radio("View", ["Overview", "Drugs", "Benchmark", "Similarity", "Combinations", "Pathways"])
 
-    # Page routing
-    if page == "Overview":
-        show_overview(predictions, similarities, combinations, pathways, models)
+if summary is None:
+    st.error("No results found. Run `python main.py` (or `python main.py --quick`) first.")
+    st.stop()
 
-    elif page == "Drug Predictions":
-        show_predictions(predictions)
-
-    elif page == "Drug Similarity":
-        show_similarity(similarities)
-
-    elif page == "Combination Therapy":
-        show_combinations(combinations)
-
-    elif page == "Pathway Analysis":
-        show_pathways(pathways)
-
-    elif page == "Model Comparison":
-        show_models(models)
-
-
-def show_overview(predictions, similarities, combinations, pathways, models):
-    """Display overview page."""
-    st.markdown('<h2 class="sub-header">📊 Analysis Overview</h2>', unsafe_allow_html=True)
-
-    # Key metrics
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        if predictions is not None:
-            n_drugs = len(predictions)
-            st.metric("Total Drugs Analyzed", n_drugs)
-        else:
-            st.metric("Total Drugs Analyzed", "N/A")
-
-    with col2:
-        if predictions is not None:
-            promising = len(predictions[predictions["prediction"] == 1])
-            st.metric("Promising Candidates", promising)
-        else:
-            st.metric("Promising Candidates", "N/A")
-
-    with col3:
-        if combinations is not None:
-            st.metric("Top Combinations", len(combinations))
-        else:
-            st.metric("Top Combinations", "N/A")
-
-    with col4:
-        st.metric("Similarity Methods", len(similarities) if similarities else 0)
-
-    # Top candidates
-    if predictions is not None:
-        st.markdown("### 🎯 Top Drug Candidates")
-
-        # Filter promising drugs
-        promising_drugs = predictions[predictions["prediction"] == 1]
-
-        if len(promising_drugs) > 0:
-            # Sort by decision score
-            promising_drugs = promising_drugs.sort_values("decision_score", ascending=False)
-
-            # Display top 10
-            top_10 = promising_drugs.head(10)
-
-            fig = px.bar(
-                top_10,
-                x="drug_name",
-                y="decision_score",
-                title="Top 10 Promising Drug Candidates",
-                color="decision_score",
-                color_continuous_scale="Blues",
-            )
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Display table
-            st.dataframe(top_10[["drug_name", "decision_score", "is_promising"]], use_container_width=True)
-        else:
-            st.warning("No promising drug candidates found in predictions.")
-
-    # Analysis summary
-    st.markdown("### 📈 Analysis Pipeline Status")
-
-    status_data = []
-    status_data.append(
-        {"Stage": "Drug Predictions", "Status": "✅ Complete" if predictions is not None else "❌ Not Run"}
+if page == "Overview":
+    d = meta.get("data", {})
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Dose-response curves", d.get("n_curves", len(summary)))
+    c2.metric("GBM cell lines", d.get("n_cell_lines", "–"))
+    c3.metric("Drugs", d.get("n_drugs", len(summary)))
+    c4.metric("GBM-selective drugs (FDR<0.05)", int(summary["gbm_selective"].sum()))
+    st.markdown(
+        "**Selectivity volcano.** Negative mean z = GBM lines more sensitive than the pan-cancer panel."
     )
-    status_data.append(
-        {
-            "Stage": "Similarity Analysis",
-            "Status": f"✅ Complete ({len(similarities)} methods)" if similarities else "❌ Not Run",
-        }
-    )
-    status_data.append(
-        {
-            "Stage": "Combination Therapy",
-            "Status": "✅ Complete" if combinations is not None else "❌ Not Run",
-        }
-    )
-    status_data.append(
-        {"Stage": "Pathway Enrichment", "Status": "✅ Complete" if pathways is not None else "❌ Not Run"}
-    )
-    status_data.append(
-        {"Stage": "Model Comparison", "Status": "✅ Complete" if models is not None else "❌ Not Run"}
-    )
-
-    st.table(pd.DataFrame(status_data))
-
-
-def show_predictions(predictions):
-    """Display drug predictions page."""
-    st.markdown('<h2 class="sub-header">💊 Drug Predictions</h2>', unsafe_allow_html=True)
-
-    if predictions is None:
-        st.error("No prediction data available. Please run the pipeline first.")
-        return
-
-    # Filters
-    col1, col2 = st.columns(2)
-
-    with col1:
-        class_filter = st.selectbox(
-            "Filter by Prediction", ["All", "Promising (Class 1)", "Not Promising (Class 0)"]
-        )
-
-    with col2:
-        min_score = st.slider("Minimum Decision Score", -1.0, 1.0, -1.0, 0.05)
-
-    # Apply filters
-    filtered_df = predictions.copy()
-
-    if class_filter == "Promising (Class 1)":
-        filtered_df = filtered_df[filtered_df["prediction"] == 1]
-    elif class_filter == "Not Promising (Class 0)":
-        filtered_df = filtered_df[filtered_df["prediction"] == -1]
-
-    filtered_df = filtered_df[filtered_df["decision_score"] >= min_score]
-
-    # Display results
-    st.markdown(f"### Showing {len(filtered_df)} drugs")
-
-    # Scatter plot
+    df = summary.dropna(subset=["z_q"]).copy()
+    df["-log10 q"] = -df["z_q"].clip(lower=1e-300).apply(lambda v: __import__("math").log10(v))
     fig = px.scatter(
-        filtered_df,
-        x="drug_name",
-        y="decision_score",
-        color="prediction",
-        hover_data=["is_promising"],
-        title="Drug Predictions by Decision Score",
-        labels={"prediction": "Prediction Class", "decision_score": "Decision Score"},
-        color_continuous_scale="RdYlGn",
+        df,
+        x="z_mean",
+        y="-log10 q",
+        color="gbm_selective",
+        hover_name="drug_name",
+        hover_data=["putative_target", "pathway_name", "n_cell_lines"],
+        color_discrete_map={True: "#d62728", False: "#9aa0a6"},
     )
-    fig.update_layout(height=500)
+    fig.add_hline(y=-__import__("math").log10(0.05), line_dash="dash")
     st.plotly_chart(fig, use_container_width=True)
+    if (cfg.RESULTS_DIR / "RESULTS.md").exists():
+        with st.expander("Auto-generated results summary (RESULTS.md)"):
+            st.markdown((cfg.RESULTS_DIR / "RESULTS.md").read_text())
 
-    # Data table
-    st.dataframe(filtered_df, use_container_width=True)
-
-    # Download button
-    csv = filtered_df.to_csv(index=False)
-    st.download_button(
-        label="📥 Download Filtered Results", data=csv, file_name="filtered_predictions.csv", mime="text/csv"
+elif page == "Drugs":
+    table = scores if scores is not None else summary
+    st.markdown(
+        "One row per drug. `oof_pred_*` are out-of-fold predictions from the best model under grouped CV; `novelty_score` is the out-of-fold One-Class SVM score."
     )
-
-
-def show_similarity(similarities):
-    """Display similarity analysis page."""
-    st.markdown('<h2 class="sub-header">🔬 Drug Similarity Analysis</h2>', unsafe_allow_html=True)
-
-    if not similarities:
-        st.error("No similarity data available. Please run the pipeline first.")
-        return
-
-    # Method selection
-    method = st.selectbox("Select Similarity Method", list(similarities.keys()))
-
-    sim_matrix = similarities[method]
-    method_name = str(method).upper() if method else "UNKNOWN"
-
-    # Heatmap
-    st.markdown(f"### {method_name} Similarity Matrix")
-
-    fig = px.imshow(
-        sim_matrix,
-        labels=dict(color="Similarity"),
-        title=f"{method_name} Similarity Heatmap",
-        color_continuous_scale="Blues",
-        aspect="auto",
-    )
-    fig.update_layout(height=600)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Drug pair selection
-    st.markdown("### Compare Specific Drugs")
-
-    col1, col2 = st.columns(2)
-
-    drugs = sim_matrix.index.tolist()
-
-    with col1:
-        drug1 = st.selectbox("Select Drug 1", drugs, key="drug1")
-
-    with col2:
-        drug2 = st.selectbox("Select Drug 2", drugs, key="drug2")
-
-    if drug1 and drug2:
-        similarity_score = sim_matrix.loc[drug1, drug2]
-        st.metric(f"Similarity: {drug1} vs {drug2}", f"{similarity_score:.4f}")
-
-
-def show_combinations(combinations):
-    """Display combination therapy page."""
-    st.markdown('<h2 class="sub-header">💊+💊 Combination Therapy</h2>', unsafe_allow_html=True)
-
-    if combinations is None:
-        st.error("No combination data available. Please run the pipeline first.")
-        return
-
-    # Top combinations
-    st.markdown("### Top Drug Combinations")
-
-    # Bar chart
-    top_combos = combinations.head(15)
-
-    fig = px.bar(
-        top_combos,
-        x="Combination",
-        y="Total_Score",
-        title="Top 15 Drug Combinations by Synergy Score",
-        color="Total_Score",
-        color_continuous_scale="Greens",
-        hover_data=["Pathway_Score", "Target_Score", "Similarity_Score"],
-    )
-    fig.update_layout(height=500, xaxis_tickangle=-45)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Detailed view
-    st.markdown("### Combination Details")
-
-    selected_combo = st.selectbox(
-        "Select a combination to view details", combinations["Combination"].tolist()
-    )
-
-    combo_details = combinations[combinations["Combination"] == selected_combo].iloc[0]
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Total Score", f"{combo_details['Total_Score']:.3f}")
-
-    with col2:
-        st.metric("Pathway Score", f"{combo_details['Pathway_Score']:.3f}")
-
-    with col3:
-        st.metric("Target Score", f"{combo_details['Target_Score']:.3f}")
-
-    st.info(f"**Rationale:** {combo_details['Rationale']}")
-
-    # Full table
-    st.markdown("### All Combinations")
-    st.dataframe(combinations, use_container_width=True)
-
-
-def show_pathways(pathways):
-    """Display pathway analysis page."""
-    st.markdown('<h2 class="sub-header">🧬 Pathway Enrichment Analysis</h2>', unsafe_allow_html=True)
-
-    if pathways is None:
-        st.error("No pathway data available. Please run the pipeline first.")
-        return
-
-    st.info("Pathway enrichment analysis based on all drug targets combined from the dataset.")
-
-    # Library filter
-    if "Library" in pathways.columns:
-        libraries = ["All"] + sorted(pathways["Library"].unique().tolist())
-        selected_library = st.selectbox("Filter by Pathway Database", libraries)
-
-        if selected_library != "All":
-            filtered_pathways = pathways[pathways["Library"] == selected_library]
-        else:
-            filtered_pathways = pathways
-    else:
-        filtered_pathways = pathways
-
-    # Summary metrics
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Pathways", len(filtered_pathways))
-    with col2:
-        sig_pathways = (
-            len(filtered_pathways[filtered_pathways["P-value"] < 0.05])
-            if "P-value" in filtered_pathways.columns
-            else 0
+    only_sel = st.checkbox("GBM-selective only", value=False)
+    q = st.text_input("Filter by drug name / target / pathway")
+    view = table[table["gbm_selective"].astype(bool)] if only_sel else table
+    if q:
+        mask = (
+            view[["drug_name", "putative_target", "pathway_name"]]
+            .astype(str)
+            .apply(lambda s: s.str.contains(q, case=False, na=False))
+            .any(axis=1)
         )
-        st.metric("Significant Pathways (p<0.05)", sig_pathways)
-    with col3:
-        if "Library" in filtered_pathways.columns:
-            st.metric("Databases", filtered_pathways["Library"].nunique())
+        view = view[mask]
+    st.dataframe(view, use_container_width=True, height=600)
 
-    # Top pathways visualization
-    st.markdown("### Top 20 Enriched Pathways")
-
-    top_pathways = filtered_pathways.head(20).copy()
-
-    if "P-value" in top_pathways.columns:
-        # Convert p-value to -log10(p)
-        top_pathways["-log10(P)"] = -np.log10(top_pathways["P-value"] + 1e-300)
-
+elif page == "Benchmark":
+    if bench is None:
+        st.info("Benchmark stage not run.")
+    else:
+        task = st.selectbox("Task", sorted(bench["task"].unique()))
+        metrics = sorted(bench[bench["task"] == task]["metric"].unique())
+        metric = st.selectbox(
+            "Metric", metrics, index=metrics.index("spearman_rho") if "spearman_rho" in metrics else 0
+        )
+        df = bench[(bench["task"] == task) & (bench["metric"] == metric)].copy()
+        df["err_low"] = df["mean"] - df["ci_low"]
+        df["err_high"] = df["ci_high"] - df["mean"]
         fig = px.bar(
-            top_pathways,
-            y="Term",
-            x="-log10(P)",
-            title="Top 20 Most Significant Pathways",
+            df,
+            x="mean",
+            y="model",
+            color="strategy",
+            barmode="group",
             orientation="h",
-            color="-log10(P)",
-            color_continuous_scale="Reds",
-            hover_data=["Library", "Overlapping Genes"] if "Library" in top_pathways.columns else None,
+            error_x="err_high",
+            error_x_minus="err_low",
+            title=f"{task}: {metric} (mean, 95% bootstrap CI over folds)",
         )
-        fig.update_layout(
-            height=600,
-            yaxis={"categoryorder": "total ascending"},
-            xaxis_title="-log10(P-value)",
-            yaxis_title="Pathway",
-        )
+        fig.update_layout(height=520)
         st.plotly_chart(fig, use_container_width=True)
-
-    # Pathway by library breakdown
-    if "Library" in filtered_pathways.columns:
-        st.markdown("### Pathways by Database")
-        library_counts = filtered_pathways["Library"].value_counts().reset_index()
-        library_counts.columns = ["Database", "Count"]
-
-        fig2 = px.pie(
-            library_counts,
-            values="Count",
-            names="Database",
-            title="Distribution of Enriched Pathways by Database",
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-
-    # Full data table
-    st.markdown("### Pathway Enrichment Results")
-    st.dataframe(
-        filtered_pathways[
-            [
-                c
-                for c in [
-                    "Rank",
-                    "Term",
-                    "P-value",
-                    "Adjusted P-value",
-                    "Combined Score",
-                    "Overlapping Genes",
-                    "Library",
-                ]
-                if c in filtered_pathways.columns
-            ]
-        ],
-        use_container_width=True,
-        height=400,
-    )
-
-
-def show_models(models):
-    """Display model comparison page."""
-    st.markdown('<h2 class="sub-header">🤖 Model Comparison</h2>', unsafe_allow_html=True)
-
-    if models is None:
-        st.error("No model comparison data available.")
-        return
-
-    # Performance comparison
-    st.markdown("### Model Performance Comparison")
-
-    # Bar chart for main metric
-    if "F1_Score" in models.columns:
-        metric = "F1_Score"
-    elif "R2_Score" in models.columns:
-        metric = "R2_Score"
-    else:
-        metric = models.columns[2]  # Use third column as default
-
-    fig = px.bar(
-        models,
-        x="Model",
-        y=metric,
-        title=f"Model Comparison by {metric}",
-        color=metric,
-        color_continuous_scale="Viridis",
-    )
-    fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Detailed metrics table
-    st.markdown("### Detailed Metrics")
-    st.dataframe(models, use_container_width=True)
-
-    # Cross-validation scores if available
-    if "CV_Score_Mean" in models.columns:
-        st.markdown("### Cross-Validation Performance")
-
-        fig = go.Figure()
-
-        for _idx, row in models.iterrows():
-            fig.add_trace(
-                go.Bar(
-                    x=[row["Model"]],
-                    y=[row["CV_Score_Mean"]],
-                    error_y=dict(type="data", array=[row["CV_Score_Std"]]),
-                    name=row["Model"],
-                )
+        if scramble.get(task):
+            s = scramble[task]
+            st.markdown(
+                f"**y-scrambling** ({s['model']}, grouped CV): real {s['metric']} = {s['real']:.3f}, permuted-label mean = {s['null_mean']:.3f}, empirical p = {s['empirical_p']:.3f} ({s['n_rounds']} rounds)."
             )
+        if oof is not None and best is not None:
+            row = best[(best["task"] == task) & (best["strategy"] == "grouped")]
+            if len(row):
+                model = row.iloc[0]["model"]
+                sub = oof[(oof["task"] == task) & (oof["model"] == model) & (oof["strategy"] == "grouped")]
+                st.plotly_chart(
+                    px.scatter(
+                        sub,
+                        x="y_true",
+                        y="y_pred",
+                        hover_name="drug_name",
+                        title=f"Out-of-fold predictions: {model}",
+                        trendline=None,
+                    ),
+                    use_container_width=True,
+                )
 
-        fig.update_layout(
-            title="Cross-Validation Scores (Mean ± Std)", yaxis_title="CV Score", height=400, showlegend=False
+elif page == "Similarity":
+    st.markdown(
+        "Candidate drugs = GBM-selective ∪ top-N by selectivity. Three views: Morgan/Tanimoto, MCS-Tanimoto (rdFMCS) and cosine similarity of GNN embeddings trained on GBM selectivity."
+    )
+    for name in ("tanimoto", "mcs", "gnn"):
+        m = read_csv(cfg.SIMILARITY_RESULTS_DIR / f"{name}_candidates.csv", index_col=0)
+        if m is None:
+            continue
+        st.plotly_chart(
+            px.imshow(
+                m,
+                zmin=0,
+                zmax=1,
+                color_continuous_scale="Viridis",
+                title=f"{name} similarity",
+                aspect="auto",
+                height=650,
+            ),
+            use_container_width=True,
         )
+    if sim_summary.get("mantel"):
+        st.markdown("**Mantel tests** (Spearman r, permutation p):")
+        st.dataframe(pd.DataFrame([{"pair": k, **v} for k, v in sim_summary["mantel"].items()]))
 
-        st.plotly_chart(fig, use_container_width=True)
+elif page == "Combinations":
+    if pairs is None:
+        st.info("Combination stage not run.")
+    else:
+        st.warning(
+            "Hypothesis-generating heuristic built from single-agent GDSC data and annotations. Not a synergy prediction; nothing here is validated against combination screens."
+        )
+        n = st.slider("Show top N pairs", 10, 100, 25)
+        show = pairs[pairs["excluded_reason"].isna()].head(n)
+        st.dataframe(
+            show[
+                [
+                    "rank",
+                    "drug_a",
+                    "drug_b",
+                    "total_score",
+                    "target_diversity",
+                    "pathway_complementarity",
+                    "potency",
+                    "structural_novelty",
+                    "tanimoto",
+                    "rationale",
+                ]
+            ],
+            use_container_width=True,
+        )
+        if screen is not None:
+            st.markdown(
+                "**Structural screen** of the top pairs (`no_flag` means no rule fired, not that the pair is safe):"
+            )
+            st.dataframe(screen, use_container_width=True)
 
-
-if __name__ == "__main__":
-    main()
+elif page == "Pathways":
+    if enrich is None or enrich.empty:
+        st.info("Pathway stage not run or no gene sets available.")
+    else:
+        st.markdown(
+            "Targets of GBM-selective drugs vs targets of all screened drugs (hypergeometric, BH FDR)."
+        )
+        sig = enrich[enrich["q"] < cfg.PATHWAY_FDR]
+        st.dataframe(sig if len(sig) else enrich.head(30), use_container_width=True)

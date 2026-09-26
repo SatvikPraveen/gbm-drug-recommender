@@ -1,124 +1,66 @@
+#!/usr/bin/env python
 """
-GNN Training Script for Drug Efficacy Prediction
+Train and evaluate the graph neural network on its own.
 
-End-to-end training pipeline for Graph Neural Network model.
-Learns directly from SMILES molecular structures to predict drug efficacy.
+Runs grouped and scaffold cross-validation for one GNN configuration against the
+dummy baseline (same harness as the full benchmark), then fits a final model on all
+labelled drugs and saves it with its training curve.
 
-Workflow:
-1. Load drug screening data (IC50 values)
-2. Load SMILES representations for drugs
-3. Convert SMILES to molecular graphs
-4. Train GNN model with cross-validation
-5. Evaluate and compare with baseline models
-6. Save trained model and predictions
-
-Usage:
-    python train_gnn.py --task regression --epochs 100
-    python train_gnn.py --task classification --gnn-type gat
+Examples
+--------
+    python train_gnn.py                              # GCN, primary task (mean GBM z-score)
+    python train_gnn.py --gnn-type gat --task gbm_potency --repeats 3
+    python train_gnn.py --hidden-channels 64 --num-gnn-layers 2 --epochs 100 --device cpu
 """
+
+from __future__ import annotations
 
 import argparse
 import logging
+import sys
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error, r2_score, roc_auc_score
-from sklearn.model_selection import train_test_split
 
-from gbm_drug.config import (
-    CLEANED_DATA_FILE,
-    FIGURES_DIR,
-    GNN_BATCH_SIZE,
-    GNN_DROPOUT,
-    GNN_EARLY_STOPPING_PATIENCE,
-    GNN_EPOCHS,
-    GNN_HIDDEN_CHANNELS,
-    GNN_LEARNING_RATE,
-    GNN_NUM_GNN_LAYERS,
-    GNN_NUM_MLP_LAYERS,
-    GNN_POOLING,
-    GNN_TYPE,
-    GNN_VALIDATION_SPLIT,
-    MODEL_RESULTS_DIR,
-    RANDOM_STATE,
-    SMILES_DATA_DIR,
-    TEST_SIZE,
-)
+from gbm_drug import config as cfg
+from gbm_drug import evaluation as ev
 from gbm_drug.models.gnn_model import GNNDrugPredictor
+from gbm_drug.pipeline import TASKS, Context, Options, stage_data, stage_features
+from gbm_drug.utils import run_metadata, write_json
+from gbm_drug.utils import visualization as viz
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--task", default=TASKS[0].name, choices=[t.name for t in TASKS])
+    p.add_argument("--gnn-type", default=cfg.GNN_TYPE, choices=["gcn", "gat"])
+    p.add_argument("--hidden-channels", type=int, default=cfg.GNN_HIDDEN_CHANNELS)
+    p.add_argument("--num-gnn-layers", type=int, default=cfg.GNN_NUM_GNN_LAYERS)
+    p.add_argument("--num-mlp-layers", type=int, default=cfg.GNN_NUM_MLP_LAYERS)
+    p.add_argument("--dropout", type=float, default=cfg.GNN_DROPOUT)
+    p.add_argument("--pooling", default=cfg.GNN_POOLING, choices=["mean", "max", "add"])
+    p.add_argument("--learning-rate", type=float, default=cfg.GNN_LEARNING_RATE)
+    p.add_argument("--batch-size", type=int, default=cfg.GNN_BATCH_SIZE)
+    p.add_argument("--epochs", type=int, default=cfg.GNN_EPOCHS)
+    p.add_argument("--patience", type=int, default=cfg.GNN_EARLY_STOPPING_PATIENCE)
+    p.add_argument("--repeats", type=int, default=1, help="repeats of grouped CV")
+    p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
+    p.add_argument("--seed", type=int, default=cfg.RANDOM_STATE)
+    return p.parse_args(argv)
 
 
-def load_data(task="regression"):
-    """
-    Load drug screening data and SMILES.
-
-    Args:
-        task: 'regression' for IC50 prediction or 'classification' for effectiveness
-
-    Returns:
-        Tuple of (smiles_list, targets, drug_names)
-    """
-    logger.info("Loading drug screening data...")
-
-    # Load GDSC data
-    gdsc_data = pd.read_csv(CLEANED_DATA_FILE)
-    logger.info(f"Loaded {len(gdsc_data)} drug-cell line combinations")
-
-    # Load SMILES
-    smiles_file = SMILES_DATA_DIR / "drug_smiles.csv"
-    smiles_data = pd.read_csv(smiles_file)
-    logger.info(f"Loaded SMILES for {len(smiles_data)} drugs")
-
-    # Merge data
-    merged = gdsc_data.merge(smiles_data, on="drug_name", how="inner")
-    logger.info(f"Merged data: {len(merged)} samples")
-
-    # Average IC50 across cell lines for each drug
-    drug_summary = (
-        merged.groupby(["drug_name", "smiles"])
-        .agg({"IC50": "mean", "is_effective": lambda x: x.mode()[0] if len(x.mode()) > 0 else x.iloc[0]})
-        .reset_index()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO, format=cfg.LOG_FORMAT, handlers=[logging.StreamHandler(sys.stdout)]
     )
+    cfg.ensure_directories()
 
-    logger.info(f"Aggregated to {len(drug_summary)} unique drugs")
+    ctx = Context(options=Options(include_gnn=True, device=args.device, seed=args.seed))
+    stage_data(ctx)
+    stage_features(ctx)
+    task = next(t for t in TASKS if t.name == args.task)
 
-    # Prepare targets
-    if task == "regression":
-        # Log-transform IC50 for better model performance
-        targets = np.log1p(drug_summary["IC50"].values)
-        logger.info("Task: Regression (log-transformed IC50)")
-        logger.info(f"Target range: [{targets.min():.2f}, {targets.max():.2f}]")
-    else:
-        targets = drug_summary["is_effective"].astype(int).values
-        logger.info("Task: Classification")
-        logger.info(f"Class distribution: {np.bincount(targets)}")
-
-    smiles_list = drug_summary["smiles"].tolist()
-    drug_names = drug_summary["drug_name"].tolist()
-
-    return smiles_list, targets, drug_names
-
-
-def train_gnn_model(args):
-    """Train and evaluate GNN model."""
-
-    # Load data
-    smiles_list, targets, drug_names = load_data(task=args.task)
-
-    # Train/test split
-    (smiles_train, smiles_test, y_train, y_test, names_train, names_test) = train_test_split(
-        smiles_list, targets, drug_names, test_size=TEST_SIZE, random_state=RANDOM_STATE
-    )
-
-    logger.info(f"Train size: {len(smiles_train)}, Test size: {len(smiles_test)}")
-
-    # Initialize GNN model
-    logger.info("Initializing GNN model...")
-    model = GNNDrugPredictor(
-        task=args.task,
+    hp = dict(
         hidden_channels=args.hidden_channels,
         num_gnn_layers=args.num_gnn_layers,
         num_mlp_layers=args.num_mlp_layers,
@@ -128,219 +70,60 @@ def train_gnn_model(args):
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         epochs=args.epochs,
-        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_patience=args.patience,
         device=args.device,
-        random_state=RANDOM_STATE,
+        random_state=args.seed,
+    )
+    label = f"GNN-{args.gnn_type.upper()} h{args.hidden_channels} L{args.num_gnn_layers}"
+    spec = ev.ModelSpec(
+        label,
+        lambda kind: GNNDrugPredictor(task=kind, **hp),
+        "smiles",
+        ("neural", "graph"),
+        repeats=args.repeats,
     )
 
-    # Train model
-    logger.info("Training GNN model...")
-    logger.info(f"Architecture: {args.num_gnn_layers}-layer {args.gnn_type.upper()}, {args.pooling} pooling")
-    logger.info(f"Hidden dims: {args.hidden_channels}, Dropout: {args.dropout}")
+    fold_scores, oof = ev.run_benchmark(
+        [task], [spec], ctx.features, ctx.targets, ctx.groups, n_repeats=args.repeats, random_state=args.seed
+    )
+    summary = ev.summarize_scores(fold_scores)
+    out = cfg.BENCHMARK_RESULTS_DIR
+    tag = f"gnn_{args.gnn_type}_{task.name}"
+    fold_scores.to_csv(out / f"{tag}_fold_scores.csv", index=False)
+    summary.to_csv(out / f"{tag}_summary.csv", index=False)
+    oof.to_csv(out / f"{tag}_oof.csv", index=False)
 
-    model.fit(smiles_train, y_train, validation_split=GNN_VALIDATION_SPLIT)
+    metric = ev.PRIMARY_METRIC[task.kind]
+    print(f"\n{task.name} — {metric} (mean [95% CI]):")
+    view = summary[summary["metric"] == metric][["model", "strategy", "mean", "ci_low", "ci_high", "n_folds"]]
+    print(view.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
 
-    # Evaluate
-    logger.info("Evaluating on test set...")
-    y_pred = model.predict(smiles_test)
-
-    if args.task == "regression":
-        # Convert back from log-space
-        y_test_original = np.expm1(y_test)
-        y_pred_original = np.expm1(y_pred)
-
-        mse = mean_squared_error(y_test_original, y_pred_original)
-        rmse = np.sqrt(mse)
-        mae = mean_absolute_error(y_test_original, y_pred_original)
-        r2 = r2_score(y_test_original, y_pred_original)
-
-        logger.info("\nRegression Results:")
-        logger.info(f"  RMSE: {rmse:.4f}")
-        logger.info(f"  MAE:  {mae:.4f}")
-        logger.info(f"  R²:   {r2:.4f}")
-
-        # Save results
-        results_df = pd.DataFrame(
+    final = GNNDrugPredictor(task=task.kind, **hp).fit(
+        ctx.smiles_list, ctx.targets[task.target].to_numpy(dtype=float)
+    )
+    model_path = cfg.MODEL_RESULTS_DIR / f"{tag}.pt"
+    final.save(model_path)
+    viz.gnn_training_curve(final.history_, name=f"{tag}_training_history")
+    write_json(
+        run_metadata(
             {
-                "drug_name": names_test,
-                "true_IC50": y_test_original,
-                "predicted_IC50": y_pred_original,
-                "error": np.abs(y_test_original - y_pred_original),
+                "script": "train_gnn.py",
+                "hyperparameters": hp,
+                "task": task.name,
+                "n_epochs": final.n_epochs_,
+                "best_val_loss": final.best_val_loss_,
             }
-        )
-
-        metrics = {"Model": "GNN", "RMSE": rmse, "MAE": mae, "R2_Score": r2, "Task": "regression"}
-
-    else:
-        accuracy = accuracy_score(y_test, y_pred)
-
-        logger.info("\nClassification Results:")
-        logger.info(f"  Accuracy: {accuracy:.4f}")
-
-        # If binary classification, calculate ROC AUC
-        if len(np.unique(y_test)) == 2:
-            y_proba = model.predict_proba(smiles_test)[:, 1]
-            roc_auc = roc_auc_score(y_test, y_proba)
-            logger.info(f"  ROC AUC:  {roc_auc:.4f}")
-
-        # Save results
-        results_df = pd.DataFrame(
-            {
-                "drug_name": names_test,
-                "true_label": y_test,
-                "predicted_label": y_pred,
-                "correct": y_test == y_pred,
-            }
-        )
-
-        if len(np.unique(y_test)) == 2:
-            results_df["probability"] = y_proba
-
-        metrics = {
-            "Model": "GNN",
-            "Accuracy": accuracy,
-            "ROC_AUC": roc_auc if len(np.unique(y_test)) == 2 else None,
-            "Task": "classification",
-        }
-
-    # Save results
-    output_file = MODEL_RESULTS_DIR / f"gnn_{args.task}_predictions.csv"
-    results_df.to_csv(output_file, index=False)
-    logger.info(f"Saved predictions to {output_file}")
-
-    # Save metrics
-    metrics_file = MODEL_RESULTS_DIR / f"gnn_{args.task}_metrics.csv"
-    pd.DataFrame([metrics]).to_csv(metrics_file, index=False)
-    logger.info(f"Saved metrics to {metrics_file}")
-
-    # Save model
-    model_file = MODEL_RESULTS_DIR / f"gnn_{args.task}_model.pt"
-    model.save(str(model_file))
-    logger.info(f"Saved model to {model_file}")
-
-    # Plot training history
-    plot_training_history(model, args.task)
-
-    # Plot predictions
-    if args.task == "regression":
-        plot_regression_results(y_test_original, y_pred_original, args.task)
-
-    return model, results_df, metrics
-
-
-def plot_training_history(model, task):
-    """Plot training and validation loss curves."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    epochs = range(1, len(model.training_history["train_loss"]) + 1)
-    ax.plot(epochs, model.training_history["train_loss"], "b-", label="Training Loss", linewidth=2)
-    ax.plot(epochs, model.training_history["val_loss"], "r-", label="Validation Loss", linewidth=2)
-
-    ax.set_xlabel("Epoch", fontsize=12)
-    ax.set_ylabel("Loss", fontsize=12)
-    ax.set_title(f"GNN Training History ({task})", fontsize=14, fontweight="bold")
-    ax.legend(fontsize=11)
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    output_file = FIGURES_DIR / f"gnn_{task}_training_history.png"
-    plt.savefig(output_file, dpi=300, bbox_inches="tight")
-    logger.info(f"Saved training plot to {output_file}")
-    plt.close()
-
-
-def plot_regression_results(y_true, y_pred, task):
-    """Plot true vs predicted values for regression."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-
-    # Scatter plot
-    ax1.scatter(y_true, y_pred, alpha=0.6, s=100)
-    ax1.plot(
-        [y_true.min(), y_true.max()], [y_true.min(), y_true.max()], "r--", lw=2, label="Perfect Prediction"
+        ),
+        cfg.MODEL_RESULTS_DIR / f"{tag}_metadata.json",
     )
-    ax1.set_xlabel("True IC50 (μM)", fontsize=12)
-    ax1.set_ylabel("Predicted IC50 (μM)", fontsize=12)
-    ax1.set_title("GNN: True vs Predicted IC50", fontsize=14, fontweight="bold")
-    ax1.legend(fontsize=11)
-    ax1.grid(True, alpha=0.3)
-
-    # Residuals
-    residuals = y_true - y_pred
-    ax2.scatter(y_pred, residuals, alpha=0.6, s=100)
-    ax2.axhline(y=0, color="r", linestyle="--", lw=2)
-    ax2.set_xlabel("Predicted IC50 (μM)", fontsize=12)
-    ax2.set_ylabel("Residuals", fontsize=12)
-    ax2.set_title("Residual Plot", fontsize=14, fontweight="bold")
-    ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    output_file = FIGURES_DIR / f"gnn_{task}_predictions.png"
-    plt.savefig(output_file, dpi=300, bbox_inches="tight")
-    logger.info(f"Saved prediction plot to {output_file}")
-    plt.close()
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Train GNN model for drug efficacy prediction")
-
-    # Task settings
-    parser.add_argument(
-        "--task",
-        type=str,
-        default="regression",
-        choices=["regression", "classification"],
-        help="Prediction task type",
+    print(
+        f"\nFinal model saved to {model_path} ({final.n_epochs_} epochs, best val loss {final.best_val_loss_:.4f})"
     )
-
-    # Model architecture
-    parser.add_argument(
-        "--hidden-channels", type=int, default=GNN_HIDDEN_CHANNELS, help="Hidden dimension size"
-    )
-    parser.add_argument("--num-gnn-layers", type=int, default=GNN_NUM_GNN_LAYERS, help="Number of GNN layers")
-    parser.add_argument("--num-mlp-layers", type=int, default=GNN_NUM_MLP_LAYERS, help="Number of MLP layers")
-    parser.add_argument("--dropout", type=float, default=GNN_DROPOUT, help="Dropout probability")
-    parser.add_argument(
-        "--gnn-type", type=str, default=GNN_TYPE, choices=["gcn", "gat"], help="Type of GNN layer"
-    )
-    parser.add_argument(
-        "--pooling",
-        type=str,
-        default=GNN_POOLING,
-        choices=["mean", "max", "add"],
-        help="Graph pooling method",
-    )
-
-    # Training settings
-    parser.add_argument("--learning-rate", type=float, default=GNN_LEARNING_RATE, help="Learning rate")
-    parser.add_argument("--batch-size", type=int, default=GNN_BATCH_SIZE, help="Batch size")
-    parser.add_argument("--epochs", type=int, default=GNN_EPOCHS, help="Number of training epochs")
-    parser.add_argument(
-        "--early-stopping-patience",
-        type=int,
-        default=GNN_EARLY_STOPPING_PATIENCE,
-        help="Early stopping patience",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="auto",
-        choices=["auto", "cpu", "cuda", "mps"],
-        help="Device to use for training",
-    )
-
-    args = parser.parse_args()
-
-    logger.info("=" * 80)
-    logger.info("GNN Drug Efficacy Prediction")
-    logger.info("=" * 80)
-
-    # Train model
-    model, results, metrics = train_gnn_model(args)
-
-    logger.info("\n" + "=" * 80)
-    logger.info("Training complete!")
-    logger.info("=" * 80)
+    pd.DataFrame(
+        {"drug_name": ctx.targets["drug_name"], "prediction": final.predict(ctx.smiles_list)}
+    ).to_csv(cfg.MODEL_RESULTS_DIR / f"{tag}_predictions_in_sample.csv", index=False)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

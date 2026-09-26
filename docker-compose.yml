@@ -1,70 +1,50 @@
 services:
-  # Main analysis pipeline
-  gbm-analysis:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gbm-drug-analysis:latest
-    container_name: gbm-drug-analysis
-    volumes:
-      # Mount data directory for input/output
-      - ./data:/app/data
-      - ./results:/app/results
-      - ./notebooks:/app/notebooks
-    environment:
-      - PYTHONPATH=/app
-      - PYTHONUNBUFFERED=1
-    command: python main.py
-    
-  # GNN Training service
-  gnn-training:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gbm-drug-analysis:latest
-    container_name: gnn-training
+  # Full pipeline (CPU). Mount data/ and results/ so outputs land in the checkout.
+  pipeline:
+    build: .
+    image: gbm-drug-recommender:latest
     volumes:
       - ./data:/app/data
       - ./results:/app/results
     environment:
-      - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-    command: python train_gnn.py --epochs 100 --batch-size 32 --task regression
-    profiles:
-      - gnn  # Only run when explicitly requested
-    
-  # Interactive dashboard
+    command: python main.py --device cpu
+
+  # Fast smoke run (no GNN, 1 CV repeat).
+  quick:
+    build: .
+    image: gbm-drug-recommender:latest
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+    command: python main.py --quick --device cpu
+    profiles: [quick]
+
+  # GNN only: grouped + scaffold CV against the baseline, then a final model.
+  gnn:
+    build: .
+    image: gbm-drug-recommender:latest
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+    command: python train_gnn.py --device cpu
+    profiles: [gnn]
+
+  # Streamlit dashboard over results/ at http://localhost:8501
   dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gbm-drug-analysis:latest
-    container_name: gbm-dashboard
+    build: .
+    image: gbm-drug-recommender:latest
     ports:
       - "8501:8501"
     volumes:
       - ./data:/app/data
       - ./results:/app/results
-    environment:
-      - PYTHONPATH=/app
     command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
-    profiles:
-      - dashboard  # Only run when explicitly requested
-    
-  # Jupyter notebook server for interactive analysis
-  notebook:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gbm-drug-analysis:latest
-    container_name: gbm-notebook
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./:/app
-    environment:
-      - PYTHONPATH=/app
-      - JUPYTER_ENABLE_LAB=yes
-    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
-    profiles:
-      - notebook  # Only run when explicitly requested
+    profiles: [dashboard]
+
+  # Unit tests.
+  test:
+    build: .
+    image: gbm-drug-recommender:latest
+    command: python -m pytest -q
+    profiles: [test]

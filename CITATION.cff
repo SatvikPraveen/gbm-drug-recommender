@@ -1,0 +1,68 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below, and cite the GDSC resource it depends on."
+title: "gbm-drug-recommender: reproducible structure-based analysis of GDSC drug response in glioblastoma cell lines"
+type: software
+version: 3.0.0
+date-released: 2026-09-26
+license: MIT
+repository-code: https://github.com/SatvikPraveen/gbm-drug-recommender
+authors:
+  - family-names: Praveen
+    given-names: Satvik
+    email: satvikpraveen707@gmail.com
+keywords:
+  - glioblastoma
+  - GDSC
+  - drug sensitivity
+  - cheminformatics
+  - graph neural networks
+  - drug repurposing
+references:
+  - type: article
+    title: "Genomics of Drug Sensitivity in Cancer (GDSC): a resource for therapeutic biomarker discovery in cancer cells"
+    authors:
+      - family-names: Yang
+        given-names: Wanjuan
+      - family-names: Soares
+        given-names: Jorge
+      - family-names: Greninger
+        given-names: Patricia
+      - family-names: Garnett
+        given-names: Mathew J.
+    journal: Nucleic Acids Research
+    volume: 41
+    issue: D1
+    start: D955
+    end: D961
+    year: 2013
+    doi: 10.1093/nar/gks1111
+  - type: article
+    title: "A Landscape of Pharmacogenomic Interactions in Cancer"
+    authors:
+      - family-names: Iorio
+        given-names: Francesco
+      - family-names: Knijnenburg
+        given-names: Theo A.
+      - family-names: Vis
+        given-names: Daniel J.
+      - family-names: Garnett
+        given-names: Mathew J.
+    journal: Cell
+    volume: 166
+    issue: 3
+    start: 740
+    end: 754
+    year: 2016
+    doi: 10.1016/j.cell.2016.06.017
+  - type: article
+    title: "PubChem 2023 update"
+    authors:
+      - family-names: Kim
+        given-names: Sunghwan
+    journal: Nucleic Acids Research
+    volume: 51
+    issue: D1
+    start: D1373
+    end: D1380
+    year: 2023
+    doi: 10.1093/nar/gkac956

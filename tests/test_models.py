@@ -4,6 +4,7 @@ import pytest
 
 from gbm_drug import evaluation as ev
 from gbm_drug.models import all_models, cluster_drugs, novelty_scores, novelty_table, tabular_models
+from gbm_drug.models.zoo import annotation_models
 
 
 def _tabular_data(n=90, seed=0):
@@ -36,7 +37,7 @@ def test_all_models_includes_gnn_specs_with_repeat_override():
     specs = all_models(include_gnn=True, gnn_repeats=1)
     gnn = [s for s in specs if "GNN" in s.name]
     assert len(gnn) == 2 and all(s.features == "smiles" and s.repeats == 1 for s in gnn)
-    assert len(all_models(include_gnn=False)) == len(tabular_models())
+    assert len(all_models(include_gnn=False)) == len(tabular_models()) + len(annotation_models())
 
 
 def test_tabular_models_beat_baseline_in_harness():

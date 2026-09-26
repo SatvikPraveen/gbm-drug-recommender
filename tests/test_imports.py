@@ -17,6 +17,10 @@ MODULES = [
     "gbm_drug.pathway_analysis",
     "gbm_drug.combination_therapy",
     "gbm_drug.drug_interactions",
+    "gbm_drug.evaluation",
+    "gbm_drug.pipeline",
+    "gbm_drug.reporting",
+    "gbm_drug.utils",
 ]
 
 

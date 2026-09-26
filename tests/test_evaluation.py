@@ -119,3 +119,26 @@ def test_bootstrap_ci_edge_cases():
     assert ev.bootstrap_ci(np.array([0.5])) == (0.5, 0.5)
     lo, hi = ev.bootstrap_ci(np.arange(10, dtype=float))
     assert lo < 4.5 < hi
+
+
+def test_best_models_picks_highest_for_higher_is_better_and_lowest_for_rmse():
+    summary = pd.DataFrame(
+        {
+            "task": ["reg"] * 6,
+            "strategy": ["grouped"] * 6,
+            "model": ["Baseline", "A", "B", "Baseline", "A", "B"],
+            "features": ["d"] * 6,
+            "metric": ["spearman_rho"] * 3 + ["rmse"] * 3,
+            "mean": [0.0, 0.2, 0.5, 1.0, 0.9, 0.7],
+            "ci_low": [0.0, 0.1, 0.4, 1.0, 0.8, 0.6],
+            "ci_high": [0.0, 0.3, 0.6, 1.0, 1.0, 0.8],
+        }
+    )
+    best = ev.best_models(summary, [ev.Task("reg", "regression", "y")])
+    assert best.iloc[0]["model"] == "B" and best.iloc[0]["baseline_mean"] == 0.0
+    # Primary metric for regression is spearman_rho; make sure a lower-is-better metric would also work.
+    ev.PRIMARY_METRIC["regression"] = "rmse"
+    try:
+        assert ev.best_models(summary, [ev.Task("reg", "regression", "y")]).iloc[0]["model"] == "B"
+    finally:
+        ev.PRIMARY_METRIC["regression"] = "spearman_rho"

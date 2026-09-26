@@ -118,6 +118,20 @@ def tabular_models() -> list[ModelSpec]:
     ]
 
 
+def annotation_models() -> list[ModelSpec]:
+    """Models on GDSC's own pathway annotation (one-hot), to compare target biology against chemistry."""
+    return [
+        ModelSpec("Linear (pathway one-hot)", _linear, "pathway", ("annotation",)),
+        ModelSpec("Random Forest (pathway one-hot)", _random_forest, "pathway", ("annotation",)),
+        ModelSpec(
+            "Random Forest (descriptors + pathway)",
+            _random_forest,
+            "descriptors_pathway",
+            ("annotation", "tree"),
+        ),
+    ]
+
+
 def gnn_models(repeats: int = 1, **overrides) -> list[ModelSpec]:
     return [
         ModelSpec(
@@ -138,7 +152,7 @@ def gnn_models(repeats: int = 1, **overrides) -> list[ModelSpec]:
 
 
 def all_models(include_gnn: bool = True, gnn_repeats: int = 1, **gnn_overrides) -> list[ModelSpec]:
-    specs = tabular_models()
+    specs = tabular_models() + annotation_models()
     if include_gnn:
         specs += gnn_models(repeats=gnn_repeats, **gnn_overrides)
     return specs
