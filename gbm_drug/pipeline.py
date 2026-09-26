@@ -261,9 +261,41 @@ def stage_benchmark(ctx: Context) -> None:
         write_json(ctx.scramble_p, out / "y_scrambling_summary.json")
 
 
+def _load_benchmark_artifacts(ctx: Context) -> None:
+    """Populate ctx from results/benchmark if the benchmark stage did not run in this process."""
+    if ctx.best is not None:
+        return
+    out = cfg.BENCHMARK_RESULTS_DIR
+    needed = [out / "summary.csv", out / "best_models.csv", out / "oof_predictions.csv"]
+    if not all(p.exists() for p in needed):
+        raise FileNotFoundError("benchmark artifacts missing; run `python main.py --stages benchmark` first")
+    ctx.score_summary = pd.read_csv(needed[0])
+    ctx.best = pd.read_csv(needed[1])
+    ctx.oof = pd.read_csv(needed[2])
+    if (out / "fold_scores.csv").exists():
+        ctx.fold_scores = pd.read_csv(out / "fold_scores.csv")
+    if (out / "y_scrambling.csv").exists():
+        ctx.scramble = pd.read_csv(out / "y_scrambling.csv")
+    ctx.scramble_p = load_json(out / "y_scrambling_summary.json")
+    logger.info("Loaded benchmark artifacts from %s", out)
+
+
+def _load_saved_gnn(ctx: Context) -> None:
+    """Reuse the final GNN saved by an earlier final_models stage, if any."""
+    if ctx.gnn is not None or not ctx.options.include_gnn:
+        return
+    path = cfg.MODEL_RESULTS_DIR / "gnn_gcn_gbm_selectivity.pt"
+    if path.exists():
+        from .models.gnn_model import GNNDrugPredictor
+
+        ctx.gnn = GNNDrugPredictor.load(path, device=ctx.options.device)
+        logger.info("Loaded saved GNN from %s", path.name)
+
+
 def stage_final_models(ctx: Context) -> None:
     out = cfg.MODEL_RESULTS_DIR
     out.mkdir(parents=True, exist_ok=True)
+    _load_benchmark_artifacts(ctx)
     specs = {s.name: s for s in _models(ctx)}
     for task in TASKS:
         row = ctx.best[(ctx.best["task"] == task.name) & (ctx.best["strategy"] == "grouped")]
@@ -381,6 +413,7 @@ def _candidate_set(ctx: Context) -> list[str]:
 def stage_similarity(ctx: Context) -> None:
     out = cfg.SIMILARITY_RESULTS_DIR
     out.mkdir(parents=True, exist_ok=True)
+    _load_saved_gnn(ctx)
     smiles_all = dict(zip(ctx.targets["drug_name"], ctx.targets["smiles_parent"]))
     ctx.candidates = _candidate_set(ctx)
     (out / "candidates.txt").write_text("\n".join(ctx.candidates) + "\n")
@@ -536,7 +569,7 @@ STAGE_FUNCS = {
 REQUIRES = {
     "features": ["data"],
     "benchmark": ["features"],
-    "final_models": ["benchmark"],
+    "final_models": ["features"],  # loads benchmark artifacts from disk if the stage did not run
     "novelty": ["features"],
     "clustering": ["features"],
     "similarity": ["features"],

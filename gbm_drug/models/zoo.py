@@ -35,8 +35,13 @@ def _linear(kind: str) -> BaseEstimator:
     return make_pipeline(StandardScaler(), Ridge(alpha=1.0))
 
 
+def _as_bool(X):
+    """Module-level (picklable) converter: Jaccard distance needs boolean input."""
+    return np.asarray(X, dtype=bool)
+
+
 def _knn_jaccard(kind: str) -> BaseEstimator:
-    to_bool = FunctionTransformer(lambda X: np.asarray(X, dtype=bool))
+    to_bool = FunctionTransformer(_as_bool)
     if kind == "classification":
         return make_pipeline(
             to_bool, KNeighborsClassifier(n_neighbors=7, metric="jaccard", weights="distance")
@@ -79,10 +84,11 @@ class _PosWeightXGBClassifier(XGBClassifier):
 
 
 def _svm(kind: str) -> BaseEstimator:
+    # No probability=True: it is deprecated in scikit-learn 1.9 and the harness scores
+    # classifiers through decision_function when predict_proba is absent.
     if kind == "classification":
         return make_pipeline(
-            StandardScaler(),
-            SVC(C=1.0, gamma="scale", class_weight="balanced", probability=True, random_state=RANDOM_STATE),
+            StandardScaler(), SVC(C=1.0, gamma="scale", class_weight="balanced", random_state=RANDOM_STATE)
         )
     return make_pipeline(StandardScaler(), SVR(C=1.0, gamma="scale", epsilon=0.1))
 

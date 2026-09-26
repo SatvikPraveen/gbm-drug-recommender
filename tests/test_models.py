@@ -27,8 +27,9 @@ def test_every_tabular_model_fits_and_predicts(kind):
         X = feats[spec.features]
         model.fit(X[:60], y[:60])
         if kind == "classification":
-            p = model.predict_proba(X[60:])
-            assert p.shape == (30, 2)
+            # The harness scores classifiers via predict_proba or, failing that, decision_function.
+            score = ev._predict(model, kind, X[60:])
+            assert score.shape == (30,) and np.isfinite(score).all()
         else:
             assert model.predict(X[60:]).shape == (30,)
 
@@ -83,3 +84,21 @@ def test_cluster_drugs_returns_assignments_and_metrics():
     } <= set(table.columns)
     assert metrics["kmeans"]["k"] == 3 and metrics["kmeans"]["silhouette"] > 0.7
     assert set(k_table.columns) == {"k", "silhouette"}
+
+
+def test_every_model_spec_is_picklable_after_fit(tmp_path):
+    """final_models persists fitted estimators with joblib; lambdas inside pipelines would break that."""
+    import io
+
+    import joblib
+
+    feats, targets, _ = _tabular_data(n=40)
+    y = targets["y"].to_numpy()
+    feats["pathway"] = (np.arange(40) % 3)[:, None] == np.arange(3)[None, :]
+    feats["descriptors_pathway"] = np.hstack([feats["descriptors"], feats["pathway"].astype(np.uint8)])
+    for spec in all_models(include_gnn=False):
+        model = spec.factory("regression").fit(feats[spec.features], y)
+        buf = io.BytesIO()
+        joblib.dump(model, buf)
+        buf.seek(0)
+        assert joblib.load(buf).predict(feats[spec.features][:3]).shape == (3,)

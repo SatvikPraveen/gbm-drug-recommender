@@ -10,13 +10,8 @@ from gbm_drug import pipeline as pl
 def test_resolve_stages_adds_dependencies_in_order():
     assert pl.resolve_stages(["combinations"]) == ["data", "features", "combinations"]
     assert pl.resolve_stages(["report"]) == ["data", "report"]
-    assert pl.resolve_stages(["final_models", "novelty"]) == [
-        "data",
-        "features",
-        "benchmark",
-        "final_models",
-        "novelty",
-    ]
+    # final_models loads benchmark artifacts from disk, so benchmark is not a hard dependency
+    assert pl.resolve_stages(["final_models", "novelty"]) == ["data", "features", "final_models", "novelty"]
     assert pl.resolve_stages(list(pl.STAGES)) == list(pl.STAGES)
 
 
