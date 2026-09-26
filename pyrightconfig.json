@@ -1,11 +1,7 @@
 {
-  "include": [
-    "gbm_drug",
-    "main.py",
-    "dashboard.py"
-  ],
-  "pythonVersion": "3.9",
-  "pythonPlatform": "Darwin",
+  "include": ["gbm_drug", "scripts", "tests", "main.py", "train_gnn.py", "dashboard.py"],
+  "exclude": [".venv", "results", "data"],
+  "pythonVersion": "3.12",
   "typeCheckingMode": "basic",
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
