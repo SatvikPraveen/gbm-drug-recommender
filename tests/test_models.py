@@ -104,3 +104,15 @@ def test_every_model_spec_is_picklable_after_fit(tmp_path):
         joblib.dump(model, buf)
         buf.seek(0)
         assert joblib.load(buf).predict(feats[spec.features][:3]).shape == (3,)
+
+
+def test_every_non_gnn_spec_declares_a_valid_search_space():
+    """Nested tuning needs a grid per model, and every grid key must exist on both task variants."""
+    for spec in all_models(include_gnn=False):
+        assert spec.param_grid is not None, spec.name
+        for kind in ("regression", "classification"):
+            params = set(spec.factory(kind).get_params())
+            grid = spec.param_grid(kind)
+            assert grid, (spec.name, kind)
+            missing = [k for k in grid if k not in params]
+            assert not missing, (spec.name, kind, missing)

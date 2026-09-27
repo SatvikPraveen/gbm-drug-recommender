@@ -164,13 +164,20 @@ def tabular_models() -> list[ModelSpec]:
 def annotation_models() -> list[ModelSpec]:
     """Models on GDSC's own pathway annotation (one-hot), to compare target biology against chemistry."""
     return [
-        ModelSpec("Linear (pathway one-hot)", _linear, "pathway", ("annotation",)),
-        ModelSpec("Random Forest (pathway one-hot)", _random_forest, "pathway", ("annotation",)),
+        ModelSpec("Linear (pathway one-hot)", _linear, "pathway", ("annotation",), param_grid=_grid_linear),
+        ModelSpec(
+            "Random Forest (pathway one-hot)",
+            _random_forest,
+            "pathway",
+            ("annotation",),
+            param_grid=_grid_forest,
+        ),
         ModelSpec(
             "Random Forest (descriptors + pathway)",
             _random_forest,
             "descriptors_pathway",
             ("annotation", "tree"),
+            param_grid=_grid_forest,
         ),
     ]
 
