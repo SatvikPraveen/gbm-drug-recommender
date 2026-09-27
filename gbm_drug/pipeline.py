@@ -538,6 +538,9 @@ def stage_figures(ctx: Context) -> None:
 def stage_report(ctx: Context) -> None:
     from .reporting import write_results_markdown
 
+    # Keep timings of stages that ran in an earlier process (e.g. `--stages report` after a full run).
+    previous = load_json(cfg.RESULTS_DIR / "metadata.json").get("timings_seconds", {})
+    ctx.timings = {**{k: v for k, v in previous.items() if k not in ctx.timings}, **ctx.timings}
     meta = run_metadata(
         {
             "options": {

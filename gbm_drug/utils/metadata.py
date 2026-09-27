@@ -45,7 +45,9 @@ def run_metadata(extra: dict | None = None) -> dict:
     meta = {
         "package_version": __version__,
         "git_commit": _git("rev-parse", "HEAD"),
-        "git_dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
+        "git_dirty": bool(
+            _git("status", "--porcelain", "--untracked-files=no", "--", ".", ":!results")
+        ),  # results/ is rewritten by the run itself
         "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "python": platform.python_version(),
         "platform": platform.platform(),

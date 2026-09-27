@@ -64,12 +64,13 @@ wide and the scaffold estimate spans 0.59–0.85; treat this as "there is
 signal", not as a deployable classifier.
 
 **Graph neural networks**: GCN and GAT encoders on molecular graphs sit in
-the middle of the pack or below on every task (selectivity ρ ≈ 0.09–0.17, potency
-≈ 0.14–0.25, classification AUC ≈ 0.56–0.72, GAT consistently below GCN) and
-never beat gradient boosting or random forests on fingerprints. At ~430 molecules this is the expected outcome and
+the middle of the pack or below on every task (GCN: selectivity ρ = 0.18 [0.14, 0.22],
+potency 0.28 [0.24, 0.32], classification AUC 0.70 [0.64, 0.74]; GAT is
+weaker on all three) and never beat gradient boosting or random forests on
+fingerprints. At ~430 molecules this is the expected outcome and
 the reason they are reported as a controlled comparison rather than a
-headline. They were run with one CV repeat; raise `--gnn-repeats` for
-tighter intervals.
+headline. The committed results use five grouped-CV repeats for the GNNs
+(`--gnn-repeats 5`), the same as the tabular models.
 
 **Model ranking is not stable enough to name a winner.** Within each task the
 top four or five models have overlapping CIs. The robust conclusions are

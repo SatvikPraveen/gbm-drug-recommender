@@ -1,8 +1,8 @@
 {
   "package_version": "3.0.0",
-  "git_commit": "df13770c3d6c0307cf43556cf5c2b8d0a6f0946d",
+  "git_commit": "cc2a781b88b02e50a2de4f9bdeabe1e8783d6b5e",
   "git_dirty": true,
-  "timestamp_utc": "2026-09-26T23:56:43+00:00",
+  "timestamp_utc": "2026-09-27T00:50:55+00:00",
   "python": "3.12.12",
   "platform": "macOS-26.6.2-arm64-arm-64bit",
   "machine": "arm64",
@@ -81,7 +81,7 @@
     ],
     "quick": false,
     "include_gnn": true,
-    "gnn_repeats": 1,
+    "gnn_repeats": 5,
     "cv_repeats": 5,
     "scramble_rounds": 20,
     "mcs_max_drugs": 120,
@@ -92,14 +92,14 @@
   "timings_seconds": {
     "data": 0.0,
     "features": 0.4,
-    "benchmark": 431.3,
-    "final_models": 4.5,
+    "benchmark": 774.3,
+    "final_models": 4.3,
     "novelty": 0.0,
-    "clustering": 5.5,
-    "similarity": 7.5,
+    "clustering": 5.7,
+    "similarity": 8.1,
     "combinations": 0.1,
     "pathways": 0.1,
-    "figures": 1.7
+    "figures": 1.5
   },
   "data": {
     "n_curves": 20329,
