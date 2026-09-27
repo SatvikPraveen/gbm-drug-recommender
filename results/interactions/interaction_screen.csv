@@ -1,0 +1,101 @@
+drug_a,drug_b,alert_level,n_flags,rules,details,structures_available
+TGX221,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 10.7 log units: co-formulation may be impractical,True
+Pazopanib,AZD6482,low,1,acid_base_pair,carboxylic/sulfonic acid with an aliphatic primary/secondary amine: possible salt formation in co-formulation,True
+Staurosporine,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 12.1 log units: co-formulation may be impractical,True
+WH-4-023,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 13.6 log units: co-formulation may be impractical,True
+AZD6482,Bleomycin (50 uM),low,2,acid_base_pair;logp_mismatch,carboxylic/sulfonic acid with an aliphatic primary/secondary amine: possible salt formation in co-formulation | lipophilicity differs by 10.4 log units: co-formulation may be impractical,True
+Tanespimycin,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 10.2 log units: co-formulation may be impractical,True
+torin2,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 12.9 log units: co-formulation may be impractical,True
+Staurosporine,AZD6482,low,1,acid_base_pair,carboxylic/sulfonic acid with an aliphatic primary/secondary amine: possible salt formation in co-formulation,True
+"CAP-232, TT-232, TLN-232",Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 7.2 log units: co-formulation may be impractical,True
+TGX221,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 10.7 log units: co-formulation may be impractical,True
+BX795,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 12.4 log units: co-formulation may be impractical,True
+Staurosporine,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 12.1 log units: co-formulation may be impractical,True
+WH-4-023,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 13.6 log units: co-formulation may be impractical,True
+GSK269962A,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 11.5 log units: co-formulation may be impractical,True
+"CAP-232, TT-232, TLN-232",HG6-64-1,low,1,logp_mismatch,lipophilicity differs by 6.9 log units: co-formulation may be impractical,True
+Pazopanib,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 10.8 log units: co-formulation may be impractical,True
+GSK269962A,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 11.5 log units: co-formulation may be impractical,True
+"CAP-232, TT-232, TLN-232",AZD6482,low,1,acid_base_pair,carboxylic/sulfonic acid with an aliphatic primary/secondary amine: possible salt formation in co-formulation,True
+Tanespimycin,AZD6482,low,1,acid_base_pair,carboxylic/sulfonic acid with an aliphatic primary/secondary amine: possible salt formation in co-formulation,True
+Bleomycin (10 uM),CRT0105446,low,1,logp_mismatch,lipophilicity differs by 13.2 log units: co-formulation may be impractical,True
+BX795,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 12.4 log units: co-formulation may be impractical,True
+"CAP-232, TT-232, TLN-232",Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 7.2 log units: co-formulation may be impractical,True
+Pazopanib,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 10.8 log units: co-formulation may be impractical,True
+torin2,Bleomycin (50 uM),low,1,logp_mismatch,lipophilicity differs by 12.9 log units: co-formulation may be impractical,True
+Tanespimycin,Bleomycin (10 uM),low,1,logp_mismatch,lipophilicity differs by 10.2 log units: co-formulation may be impractical,True
+WH-4-023,"CAP-232, TT-232, TLN-232",low,1,logp_mismatch,lipophilicity differs by 6.4 log units: co-formulation may be impractical,True
+"CAP-232, TT-232, TLN-232",Temsirolimus,low,1,logp_mismatch,lipophilicity differs by 6.2 log units: co-formulation may be impractical,True
+AZD6482,Bleomycin (10 uM),low,2,acid_base_pair;logp_mismatch,carboxylic/sulfonic acid with an aliphatic primary/secondary amine: possible salt formation in co-formulation | lipophilicity differs by 10.4 log units: co-formulation may be impractical,True
+"CAP-232, TT-232, TLN-232",CRT0105446,no_flag,0,,,True
+WH-4-023,Luminespib,no_flag,0,,,True
+TGX221,Luminespib,no_flag,0,,,True
+Pazopanib,Temsirolimus,no_flag,0,,,True
+BX795,torin2,no_flag,0,,,True
+Staurosporine,A-770041,no_flag,0,,,True
+Staurosporine,Temsirolimus,no_flag,0,,,True
+Tanespimycin,CRT0105446,no_flag,0,,,True
+GSK269962A,A-770041,no_flag,0,,,True
+TGX221,Cabozantinib,no_flag,0,,,True
+TGX221,WH-4-023,no_flag,0,,,True
+Pazopanib,A-770041,no_flag,0,,,True
+Staurosporine,Luminespib,no_flag,0,,,True
+TGX221,Bortezomib,no_flag,0,,,True
+WH-4-023,JNJ38877605,no_flag,0,,,True
+WH-4-023,Cabozantinib,no_flag,0,,,True
+GSK269962A,Cabozantinib,no_flag,0,,,True
+Tanespimycin,A-770041,no_flag,0,,,True
+Staurosporine,Dasatinib,no_flag,0,,,True
+AZD6482,HG6-64-1,no_flag,0,,,True
+TGX221,JNJ38877605,no_flag,0,,,True
+"CAP-232, TT-232, TLN-232",A-770041,no_flag,0,,,True
+BX795,CRT0105446,no_flag,0,,,True
+TGX221,Dasatinib,no_flag,0,,,True
+Tanespimycin,HG6-64-1,no_flag,0,,,True
+GSK269962A,Luminespib,no_flag,0,,,True
+Pazopanib,Luminespib,no_flag,0,,,True
+Pazopanib,HG6-64-1,no_flag,0,,,True
+GSK269962A,Temsirolimus,no_flag,0,,,True
+Tanespimycin,BX795,no_flag,0,,,True
+GSK269962A,HG6-64-1,no_flag,0,,,True
+WH-4-023,Tanespimycin,no_flag,0,,,True
+Staurosporine,Tanespimycin,no_flag,0,,,True
+Pazopanib,Tanespimycin,no_flag,0,,,True
+WH-4-023,AZD6482,no_flag,0,,,True
+TGX221,BX795,no_flag,0,,,True
+Pazopanib,"CAP-232, TT-232, TLN-232",no_flag,0,,,True
+Staurosporine,"CAP-232, TT-232, TLN-232",no_flag,0,,,True
+GSK269962A,Tanespimycin,no_flag,0,,,True
+GSK269962A,"CAP-232, TT-232, TLN-232",no_flag,0,,,True
+WH-4-023,Pazopanib,no_flag,0,,,True
+AZD6482,BX795,no_flag,0,,,True
+TGX221,Tanespimycin,no_flag,0,,,True
+TGX221,"CAP-232, TT-232, TLN-232",no_flag,0,,,True
+GSK269962A,Pazopanib,no_flag,0,,,True
+WH-4-023,GSK269962A,no_flag,0,,,True
+GSK269962A,Staurosporine,no_flag,0,,,True
+TGX221,Pazopanib,no_flag,0,,,True
+WH-4-023,Staurosporine,no_flag,0,,,True
+TGX221,GSK269962A,no_flag,0,,,True
+Staurosporine,BX795,no_flag,0,,,True
+WH-4-023,torin2,no_flag,0,,,True
+GSK269962A,AZD6482,no_flag,0,,,True
+Staurosporine,torin2,no_flag,0,,,True
+WH-4-023,Temsirolimus,no_flag,0,,,True
+Staurosporine,HG6-64-1,no_flag,0,,,True
+Tanespimycin,torin2,no_flag,0,,,True
+WH-4-023,HG6-64-1,no_flag,0,,,True
+TGX221,A-770041,no_flag,0,,,True
+TGX221,Staurosporine,no_flag,0,,,True
+"CAP-232, TT-232, TLN-232",torin2,no_flag,0,,,True
+Pazopanib,CRT0105446,no_flag,0,,,True
+"CAP-232, TT-232, TLN-232",BX795,no_flag,0,,,True
+GSK269962A,CRT0105446,no_flag,0,,,True
+Staurosporine,CRT0105446,no_flag,0,,,True
+Pazopanib,torin2,no_flag,0,,,True
+TGX221,HG6-64-1,no_flag,0,,,True
+Pazopanib,BX795,no_flag,0,,,True
+"CAP-232, TT-232, TLN-232",Tanespimycin,no_flag,0,,,True
+GSK269962A,BX795,no_flag,0,,,True
+GSK269962A,torin2,no_flag,0,,,True
+GSK269962A,Dasatinib,no_flag,0,,,True

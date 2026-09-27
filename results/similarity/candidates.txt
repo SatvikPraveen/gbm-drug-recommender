@@ -1,0 +1,30 @@
+TGX221
+GSK269962A
+Staurosporine
+Pazopanib
+Midostaurin
+CAP-232, TT-232, TLN-232
+Tanespimycin
+AZD6482
+BX795
+torin2
+Bleomycin (10 uM)
+CRT0105446
+Bleomycin (50 uM)
+HG6-64-1
+LDN-193189
+Temsirolimus
+Luminespib
+CCT245232
+Bortezomib
+WH-4-023
+XMD8-85
+A-770041
+Cabozantinib
+Dasatinib
+Bryostatin 1
+JNJ38877605
+XMD8-92
+AZD6094
+Dactolisib
+CRT0105950

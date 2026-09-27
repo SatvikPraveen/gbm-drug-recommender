@@ -1,0 +1,115 @@
+{
+  "package_version": "3.0.0",
+  "git_commit": "df13770c3d6c0307cf43556cf5c2b8d0a6f0946d",
+  "git_dirty": true,
+  "timestamp_utc": "2026-09-26T23:56:43+00:00",
+  "python": "3.12.12",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "dependencies": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1",
+    "rdkit": "2026.3.6",
+    "torch": "2.14.0",
+    "torch-geometric": "2.8.0.post1",
+    "umap-learn": "0.5.12",
+    "statsmodels": "0.15.0"
+  },
+  "config": {
+    "gdsc_release": "8.5",
+    "gbm_tcga_label": "GBM",
+    "selectivity_fdr": 0.05,
+    "selectivity_min_cell_lines": 5,
+    "selectivity_z_effect": -0.3,
+    "potency_ln_ic50_threshold": 0.0,
+    "descriptors": [
+      "MolWt",
+      "MolLogP",
+      "NumHDonors",
+      "NumHAcceptors",
+      "TPSA",
+      "NumRotatableBonds",
+      "NumAromaticRings",
+      "FractionCSP3",
+      "MolMR",
+      "HeavyAtomCount",
+      "RingCount",
+      "NumHeteroatoms",
+      "qed"
+    ],
+    "fingerprint": {
+      "type": "Morgan",
+      "radius": 2,
+      "bits": 2048
+    },
+    "cv": {
+      "folds": 5,
+      "repeats": 5,
+      "random_state": 42
+    },
+    "gnn": {
+      "type": "gcn",
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.2,
+      "lr": 0.001,
+      "epochs": 200
+    },
+    "combination_weights": {
+      "target_diversity": 0.35,
+      "pathway_complementarity": 0.25,
+      "potency": 0.3,
+      "structural_novelty": 0.1
+    }
+  },
+  "options": {
+    "stages": [
+      "data",
+      "features",
+      "benchmark",
+      "final_models",
+      "novelty",
+      "clustering",
+      "similarity",
+      "combinations",
+      "pathways",
+      "figures",
+      "report"
+    ],
+    "quick": false,
+    "include_gnn": true,
+    "gnn_repeats": 1,
+    "cv_repeats": 5,
+    "scramble_rounds": 20,
+    "mcs_max_drugs": 120,
+    "top_n": 30,
+    "device": "auto",
+    "seed": 42
+  },
+  "timings_seconds": {
+    "data": 0.0,
+    "features": 0.4,
+    "benchmark": 431.3,
+    "final_models": 4.5,
+    "novelty": 0.0,
+    "clustering": 5.5,
+    "similarity": 7.5,
+    "combinations": 0.1,
+    "pathways": 0.1,
+    "figures": 1.7
+  },
+  "data": {
+    "n_curves": 20329,
+    "n_cell_lines": 34,
+    "n_drugs": 542,
+    "n_gbm_selective": 24,
+    "n_potent": 69,
+    "datasets": [
+      "GDSC1",
+      "GDSC2"
+    ]
+  }
+}

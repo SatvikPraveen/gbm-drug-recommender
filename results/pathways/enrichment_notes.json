@@ -1,0 +1,8 @@
+{
+  "n_query_genes": 36,
+  "n_background_genes": 285,
+  "n_selective_drugs": 24,
+  "n_drugs_with_mapped_targets": 428,
+  "n_drugs_with_unmapped_tokens": 81,
+  "n_significant": 41
+}

@@ -1,0 +1,7 @@
+task,strategy,metric,model,features,mean,ci_low,ci_high,baseline_mean
+gbm_potency,grouped,spearman_rho,Random Forest (descriptors + pathway),descriptors_pathway,0.3952777591250743,0.3534930736516925,0.43409100884694046,0.0
+gbm_potency,scaffold,spearman_rho,Random Forest (descriptors + pathway),descriptors_pathway,0.40753035401566856,0.37736566460818566,0.4437627791332468,0.0
+gbm_selective_class,grouped,roc_auc,Random Forest (morgan),morgan,0.7520465965034482,0.7050693206430058,0.797153708329252,0.5
+gbm_selective_class,scaffold,roc_auc,Random Forest (descriptors + pathway),descriptors_pathway,0.721777328697938,0.5915974104185486,0.8519572469773273,0.5
+gbm_selectivity,grouped,spearman_rho,KNN-Jaccard (morgan),morgan,0.21567471083789586,0.17556928261774643,0.252343990391446,0.0
+gbm_selectivity,scaffold,spearman_rho,Linear (pathway one-hot),pathway,0.21990059649839902,0.15321132718861313,0.28658986580818496,0.0

@@ -1,0 +1,82 @@
+drug_name,unmapped
+Staurosporine,Broad spectrum kinase inhibitor
+FS112,KS6B1 (p70S6K)
+Bleomycin (10 uM),dsDNA break induction
+Bleomycin (50 uM),dsDNA break induction
+Dactolisib,PI3K (class 1)
+Piperlongumine,Induces reactive oxygen species
+Bexarotene,Retinioic X receptor (RXR) agonist
+Docetaxel,Microtubule stabiliser
+Omipalisib,PI3K (class 1)
+Zibotentan,Endothelin-1 receptor (EDNRA)
+ZL109,DNA damage
+BAM7,Bax activator
+Shikonin,not defined
+Cisplatin,DNA crosslinker
+ICL1100013,2;N-MYRISTOYLTRANSFERASE 1
+Vinblastine,Microtubule destabiliser
+Gemcitabine,Pyrimidine antimetabolite
+Epothilone B,Microtubule stabiliser
+YK-4-279,RNA helicase A
+BAY-MPS-combo-1 (paclitaxel 5 uM),microtubules
+Doxorubicin,Anthracycline
+Phenformin,Biguanide agent
+Epirubicin,Anthracycline
+BAY-MPS-combo 2 (paclitaxel 1 uM),microtubules
+FTI-277,Farnesyl-transferase (FNTA)
+Dactinomycin,RNA polymerase
+ascorbate (vitamin C),anti-oxidant proteins
+TANK_1366,2 (PARP5A;PARP5b);TANKYRASE 1
+Pictilisib,PI3K (class 1)
+Temozolomide,DNA alkylating agent
+AGI-5198,IDH1 (R132H)
+Cytarabine,Antimetabolite
+Bleomycin,dsDNA break induction
+Sphingosine Kinase 1 Inhibitor II,Sphingosine Kinase
+Vinorelbine,Microtubule destabiliser
+rTRAIL,TRAIL receptor agonist
+N23918-95-7,JMJ histone demethylase
+5-azacytidine,DNA methyltransferases
+CX-5461,RNA Polymerase 1
+STF-62247,Autophagy inducer
+Paclitaxel,Microtubule stabiliser
+NSC-87877,SHP-1 (PTPN6);SHP-2 (PTPN11)
+Pyridostatin,G-quadruplex stabiliser
+AMG-319,PI3K (beta sparing)
+Voxtalisib,PI3K (class 1)
+UNC0638,GLP methyltransferases
+Avagacestat,Amyloid beta20;Amyloid beta40
+CAY10566,Stearoyl-CoA desaturase
+Tretinoin,Retinoic acid
+CPI-613,Mitochondria
+Cyclophosphamide,Alkylating agent
+Taselisib,PI3K (beta sparing)
+N24798-49-A1,JMJ histone demethylase
+PFI3,Polybromo 1
+Mitomycin-C,DNA crosslinker
+BDP-00009066,MRCKB_HUMAN
+Tipifarnib,Farnesyl-transferase (FNTA)
+THR-101,Mutant RAS
+Venotoclax,BCL-2 selective
+Oxaliplatin,DNA alkylating agent
+N22899-6-C1,Peptidyl arginine deaminase (PAD)
+Kobe2602,RAS effector
+glutathione,anti-oxidant proteins
+Picolinici-acid,Inflammatory related
+Ara-G,Anti-metabolite
+TL-2-105,not defined
+THR-102,Mutant RAS
+PRIMA-1MET,TP53 activation
+Fludarabine,Antimetabolite
+KRAS (G12C) Inhibitor-12,KRAS (G12C)
+ZSTK474,PI3K (class 1)
+THR-103,Mutant RAS
+AGI-6780,IDH2 R140Q mutant
+PAC-1,Procaspase-3;Procaspase-7
+5-Fluorouracil,Antimetabolite (DNA & RNA)
+AICA Ribonucleotide,AMPK agonist
+Methotrexate,Antimetabolite
+Vorinostat,HDAC inhibitor Class I
+Leflunomide,Pyrimidine synthesis inhibitor
+NSC319726,P53 Mut specific
+Pyrimethamine,Dihydrofolate reductase (DHFR)

@@ -1,0 +1,10 @@
+{
+  "n_pairs": 100,
+  "n_no_flag": 72,
+  "n_low": 28,
+  "n_moderate": 0,
+  "n_high": 0,
+  "n_without_structures": 0,
+  "note": "no_flag means no rule fired; pharmacokinetic interactions are not modelled unless annotations are supplied",
+  "mean_flags": 0.3
+}

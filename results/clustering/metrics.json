@@ -1,0 +1,27 @@
+{
+  "kmeans": {
+    "n_clusters": 2,
+    "n_noise": 0,
+    "silhouette": 0.6256807640084059,
+    "davies_bouldin": 0.9300289133989524,
+    "calinski_harabasz": 160.37037573726244,
+    "k": 2
+  },
+  "ward": {
+    "n_clusters": 2,
+    "n_noise": 0,
+    "silhouette": 0.8177925815613756,
+    "davies_bouldin": 0.12557161364831415,
+    "calinski_harabasz": 148.3519484918632
+  },
+  "dbscan": {
+    "n_clusters": 2,
+    "n_noise": 108,
+    "silhouette": 0.408408982819924,
+    "davies_bouldin": 0.6562688437983486,
+    "calinski_harabasz": 25.814400113010436
+  },
+  "pca": {
+    "explained_variance_2d": 0.7494162135896849
+  }
+}

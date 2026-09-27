@@ -1,0 +1,60 @@
+{
+  "tanimoto": {
+    "n_drugs": 30,
+    "n_pairs": 435,
+    "mean": 0.1264637881854476,
+    "median": 0.11403508771929824,
+    "max": 1.0,
+    "pairs_ge_0.7": 3
+  },
+  "mcs": {
+    "n_drugs": 30,
+    "n_pairs": 435,
+    "mean": 0.11930641551528054,
+    "median": 0.1111111111111111,
+    "max": 1.0,
+    "pairs_ge_0.7": 3
+  },
+  "gnn": {
+    "n_drugs": 30,
+    "n_pairs": 435,
+    "mean": 0.8720259791587881,
+    "median": 0.8847464499453143,
+    "max": 0.9999999999999939,
+    "pairs_ge_0.7": 433
+  },
+  "all_drugs_tanimoto": {
+    "n_drugs": 429,
+    "n_pairs": 91806,
+    "mean": 0.11284012927557753,
+    "median": 0.10810810810810811,
+    "max": 1.0,
+    "pairs_ge_0.7": 26
+  },
+  "mantel": {
+    "tanimoto_vs_mcs": {
+      "r": 0.6811269650934456,
+      "p": 0.001,
+      "n_drugs": 30,
+      "n_pairs": 435,
+      "method": "spearman",
+      "n_permutations": 999
+    },
+    "tanimoto_vs_gnn": {
+      "r": 0.7307098853043136,
+      "p": 0.001,
+      "n_drugs": 30,
+      "n_pairs": 435,
+      "method": "spearman",
+      "n_permutations": 999
+    },
+    "mcs_vs_gnn": {
+      "r": 0.5747274912650437,
+      "p": 0.001,
+      "n_drugs": 30,
+      "n_pairs": 435,
+      "method": "spearman",
+      "n_permutations": 999
+    }
+  }
+}

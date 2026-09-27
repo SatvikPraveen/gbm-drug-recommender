@@ -65,6 +65,8 @@ parent structure.
 | `descriptors` | 13 RDKit descriptors: MolWt, MolLogP, MolMR, HBD, HBA, TPSA, rotatable bonds, aromatic rings, Fsp3, heavy atoms, ring count, heteroatoms, QED. Median-imputed, standardised inside each model pipeline. |
 | `morgan` | Morgan fingerprint, radius 2, 2048 bits (ECFP4-like). |
 | `smiles` | Parent SMILES, converted to graphs by the GNN (atom: element, degree, charge, hybridisation, H count, chirality, aromaticity, ring, mass; bond: order, conjugation, ring). |
+| `pathway` | One-hot of GDSC's `PATHWAY_NAME` annotation (~25 columns). Contains no chemistry; included so "what the drug targets" can be compared with "what the drug looks like" on identical folds. |
+| `descriptors_pathway` | Concatenation of `descriptors` and `pathway`. |
 
 ## 4. Evaluation protocol
 
