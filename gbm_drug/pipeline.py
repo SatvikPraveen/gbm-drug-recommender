@@ -207,7 +207,7 @@ def stage_benchmark(ctx: Context) -> None:
     out = cfg.BENCHMARK_RESULTS_DIR
     out.mkdir(parents=True, exist_ok=True)
     specs = _models(ctx)
-    fold_scores, oof = ev.run_benchmark(
+    fold_scores, oof, tuning = ev.run_benchmark(
         TASKS,
         specs,
         ctx.features,
@@ -216,7 +216,14 @@ def stage_benchmark(ctx: Context) -> None:
         n_splits=cfg.CV_FOLDS,
         n_repeats=ctx.options.cv_repeats,
         random_state=ctx.options.seed,
+        tune=ctx.options.tune,
     )
+    if len(tuning):
+        tuning.to_csv(out / "tuning.csv", index=False)
+        modal = tuning.groupby(["task", "strategy", "model"])["params"].agg(
+            lambda p: p.value_counts().index[0]
+        )
+        modal.rename("most_frequent_params").reset_index().to_csv(out / "tuning_summary.csv", index=False)
     summary = ev.summarize_scores(fold_scores)
     best = ev.best_models(summary, TASKS)
     fold_scores.to_csv(out / "fold_scores.csv", index=False)
@@ -247,6 +254,7 @@ def stage_benchmark(ctx: Context) -> None:
             "grouped",
             n_rounds=ctx.options.scramble_rounds,
             random_state=ctx.options.seed,
+            tune=ctx.options.tune,
         )
         ctx.scramble_p[task.name] = {
             "model": spec.name,
@@ -315,10 +323,15 @@ def stage_final_models(ctx: Context) -> None:
                 & (ctx.score_summary["model"] != "Baseline")
             ]
             spec = specs[tab.sort_values("mean").iloc[-1]["model"]]
-        model = ev.fit_final_model(spec, task, ctx.features, ctx.targets)
+        model = ev.fit_final_model(
+            spec, task, ctx.features, ctx.targets, ctx.groups["grouped"], tune=ctx.options.tune
+        )
         ctx.final_models[task.name] = (spec, model)
+        payload = {"spec_name": spec.name, "features": spec.features, "task": task.name, "model": model}
+        if isinstance(model, ev.TunedModel):
+            payload["best_params"] = model.best_params_
         joblib.dump(
-            {"spec_name": spec.name, "features": spec.features, "task": task.name, "model": model},
+            payload,
             out / f"final_{task.name}.joblib",
         )
         logger.info("Final model for %s: %s", task.name, spec.name)

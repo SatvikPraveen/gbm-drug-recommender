@@ -67,3 +67,67 @@ def test_candidate_set_prefers_selective_then_top_n():
     assert cand[:2] == ["b", "f"]  # selective first (in table order)
     assert len(cand) == 4  # capped
     assert "d" in cand  # among top-3 by z_mean
+
+
+def test_benchmark_and_final_model_stages_run_end_to_end(tmp_path, monkeypatch):
+    """Exercise stage_benchmark -> stage_final_models -> stage_novelty on a tiny synthetic context with tuning on."""
+    import pandas as pd
+    from sklearn.linear_model import LogisticRegression, Ridge
+
+    from gbm_drug import evaluation as ev
+
+    rng = np.random.default_rng(0)
+    n = 60
+    X = rng.normal(size=(n, 4))
+    z = X[:, 0] + rng.normal(scale=0.3, size=n)
+    targets = pd.DataFrame(
+        {
+            "drug_name": [f"d{i}" for i in range(n)],
+            "putative_target": "EGFR",
+            "pathway_name": "EGFR signaling",
+            "n_cell_lines": 30,
+            "z_mean": z,
+            "z_q": 0.5,
+            "ln_ic50_mean": -z,
+            "ic50_um_geomean": 1.0,
+            "gbm_selective": z < np.quantile(z, 0.2),
+            "potent": False,
+            "scaffold": "c1ccccc1",
+            "inchikey_parent": [f"K{i}-X-N" for i in range(n)],
+            "smiles_parent": "c1ccccc1",
+        }
+    )
+    ctx = pl.Context(options=pl.Options(quick=True, scramble_rounds=2, cv_repeats=1))
+    ctx.options.tune = True
+    ctx.targets = targets
+    ctx.features = {
+        "descriptors": X,
+        "morgan": (X > 0).astype(np.uint8),
+        "smiles": ["c1ccccc1"] * n,
+        "pathway": np.ones((n, 1)),
+        "descriptors_pathway": X,
+    }
+    ctx.groups = {"grouped": np.arange(n), "scaffold": np.arange(n) % 5}
+    spec = ev.ModelSpec(
+        "Linear (descriptors)",
+        lambda k: LogisticRegression(max_iter=500) if k == "classification" else Ridge(),
+        "descriptors",
+        param_grid=lambda k: {"C": [0.1, 1.0]} if k == "classification" else {"alpha": [0.1, 10.0]},
+    )
+    monkeypatch.setattr(pl, "_models", lambda c: [spec])
+    monkeypatch.setattr(pl, "tabular_models", lambda: [spec])
+    monkeypatch.setattr(pl.cfg, "BENCHMARK_RESULTS_DIR", tmp_path / "benchmark")
+    monkeypatch.setattr(pl.cfg, "MODEL_RESULTS_DIR", tmp_path / "models")
+    monkeypatch.setattr(pl.cfg, "RESULTS_DIR", tmp_path)
+
+    pl.stage_benchmark(ctx)
+    assert (tmp_path / "benchmark" / "summary.csv").exists()
+    assert (tmp_path / "benchmark" / "tuning.csv").exists() and (
+        tmp_path / "benchmark" / "tuning_summary.csv"
+    ).exists()
+    assert set(ctx.scramble_p) == {t.name for t in pl.TASKS}
+    pl.stage_final_models(ctx)
+    assert (tmp_path / "models" / "drug_scores.csv").exists()
+    assert all(isinstance(m, ev.TunedModel) for _, m in ctx.final_models.values())
+    pl.stage_novelty(ctx)
+    assert (tmp_path / "models" / "novelty_scores.csv").exists()
