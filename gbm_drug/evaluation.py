@@ -295,15 +295,15 @@ class TunedModel:
     def predict(self, X):
         return self.model_.predict(X)
 
-    def predict_proba(self, X):
-        return self.model_.predict_proba(X)
+    # predict_proba / decision_function are delegated dynamically rather than defined here, so
+    # hasattr() on the wrapper answers the same as on the refit estimator (an SVC without
+    # probability has no predict_proba, and the harness must fall back to decision_function).
+    _DELEGATED = ("predict_proba", "decision_function", "predict_log_proba")
 
-    def decision_function(self, X):
-        return self.model_.decision_function(X)
-
-    def __getattr__(self, name):  # e.g. feature_importances_ of the refit estimator
-        if name.endswith("_") and "model_" in self.__dict__:
-            return getattr(self.__dict__["model_"], name)
+    def __getattr__(self, name):
+        inner = self.__dict__.get("model_")
+        if inner is not None and (name in self._DELEGATED or name.endswith("_")):
+            return getattr(inner, name)
         raise AttributeError(name)
 
 

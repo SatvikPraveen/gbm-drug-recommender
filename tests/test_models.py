@@ -18,14 +18,16 @@ def _tabular_data(n=90, seed=0):
     return {"descriptors": desc, "morgan": morgan}, targets, groups
 
 
+@pytest.mark.parametrize("tune", [False, True])
 @pytest.mark.parametrize("kind", ["regression", "classification"])
-def test_every_tabular_model_fits_and_predicts(kind):
-    feats, targets, _ = _tabular_data()
+def test_every_tabular_model_fits_and_predicts(kind, tune):
+    """Every spec, fixed and nested-tuned, must fit and be scorable the way the harness scores it."""
+    feats, targets, groups = _tabular_data()
     y = targets["label" if kind == "classification" else "y"].to_numpy()
     for spec in tabular_models():
-        model = spec.factory(kind)
+        model = ev.build_model(spec, kind, tune)
         X = feats[spec.features]
-        model.fit(X[:60], y[:60])
+        ev.fit_model(model, X[:60], y[:60], groups[:60])
         if kind == "classification":
             # The harness scores classifiers via predict_proba or, failing that, decision_function.
             score = ev._predict(model, kind, X[60:])
