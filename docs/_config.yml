@@ -1,0 +1,9 @@
+title: GBM Drug Recommender
+description: Structure, selectivity and combination hypotheses for glioblastoma from the GDSC screens — reproducibly, with null models.
+theme: jekyll-theme-minimal
+show_downloads: false
+markdown: kramdown
+kramdown:
+  input: GFM
+exclude:
+  - "*.pyc"

@@ -11,6 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
   <a href="CITATION.cff"><img src="https://img.shields.io/badge/cite-CITATION.cff-lightgrey.svg" alt="Citation"></a>
   <a href="data/MANIFEST.json"><img src="https://img.shields.io/badge/data-GDSC%208.5-6f42c1.svg" alt="GDSC release 8.5"></a>
+  <a href="https://satvikpraveen.github.io/gbm-drug-recommender/"><img src="https://img.shields.io/badge/docs-github.io-0a7ea4.svg" alt="Documentation site"></a>
 </p>
 
 ---
