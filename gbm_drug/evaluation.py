@@ -576,14 +576,23 @@ def y_scramble(
 
 
 def fit_final_model(
-    spec: ModelSpec, task: Task, features: Mapping[str, object], targets: pd.DataFrame
+    spec: ModelSpec,
+    task: Task,
+    features: Mapping[str, object],
+    targets: pd.DataFrame,
+    groups: np.ndarray | None = None,
+    tune: bool = False,
 ) -> BaseEstimator:
-    """Fit one model on every labelled molecule (for downstream scoring / embeddings)."""
+    """Fit one model on every labelled molecule (for downstream scoring / embeddings).
+
+    With ``tune`` the hyper-parameters are chosen by grouped inner CV over all labelled
+    molecules, the same procedure the benchmark used inside each outer fold.
+    """
     y = targets[task.target].to_numpy()
     valid = np.where(~pd.isna(y))[0]
     y = y[valid].astype(int if task.kind == "classification" else float)
-    model = spec.factory(task.kind)
-    model.fit(_subset(features[spec.features], valid), y)
+    model = build_model(spec, task.kind, tune)
+    fit_model(model, _subset(features[spec.features], valid), y, None if groups is None else groups[valid])
     return model
 
 
