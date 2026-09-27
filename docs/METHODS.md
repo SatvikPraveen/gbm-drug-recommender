@@ -96,9 +96,16 @@ permuted across molecules (20 rounds); the empirical p is the fraction of
 permuted rounds that match or beat the real score. A model whose real score is
 not clearly outside the permuted distribution has learned nothing generalisable.
 
-**Hyper-parameters** are fixed a priori (see `gbm_drug/models/zoo.py`) and were
-not tuned on this data. Nested cross-validation would be the correct next step
-if tuning is wanted; tuning on the outer folds would re-introduce optimism.
+**Hyper-parameters** of the tabular models are selected by *nested*
+cross-validation: inside each outer training fold, a 3-fold inner CV grouped by
+the same molecule ids (stratified for classification) scores every setting of a
+small search space (1–2 axes, 3–8 settings; `gbm_drug/models/zoo.py`) by the
+task's primary metric, and the best is refit on the whole training fold. Test
+molecules never influence the choice. The selected setting and inner score are
+recorded per outer fold (`results/benchmark/tuning.csv`). The permutation null
+and the final refit use the same procedure. GNN settings are fixed
+(`config.GNN_*`); tuning them at ~430 molecules would cost far more than it
+would reveal. `--no-tune` restores fixed settings for every model.
 
 **Class imbalance.** ~4 % positives. Linear/SVM/RF use `class_weight="balanced"`;
 XGBoost sets `scale_pos_weight` from the training fold; the GNN re-weights the

@@ -138,5 +138,6 @@ alias table could not map to genes; they are listed in
   signal directly.
 - **Batch correction** between GDSC1 and GDSC2 ln IC50 might sharpen the
   potency task.
-- **Hyper-parameter tuning under nested CV** could move individual models by
-  a few hundredths of ρ; it would not turn a 0.2 into a 0.5.
+- **Larger search spaces or different model families.** Nested tuning over
+  the small grids used here moves individual models by a few hundredths of ρ;
+  it does not turn a 0.2 into a 0.5.

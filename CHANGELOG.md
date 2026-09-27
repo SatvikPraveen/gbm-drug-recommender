@@ -26,6 +26,8 @@ evaluation sound. Results from earlier versions should not be cited.
 - One-Class SVM scores are now out-of-fold; the earlier "13 promising
   candidates" were the 13 training drugs.
 - GDSC pathway-annotation models added as a comparator to structure.
+- Nested, molecule-grouped cross-validation selects tabular hyper-parameters
+  inside each outer training fold; choices are recorded per fold.
 
 ### Analyses
 - MCS similarity via `rdFMCS` (the earlier matrix was the identity).

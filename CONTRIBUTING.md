@@ -34,7 +34,7 @@ only needed to regenerate them (`python scripts/download_gdsc.py`).
 
 ## Good first contributions
 
-- Nested cross-validation for hyper-parameter tuning (currently fixed a priori).
+- Wider search spaces for the nested tuning, or Bayesian search in place of the grid.
 - Batch-correcting ln IC50 between GDSC1 and GDSC2.
 - Curated pharmacokinetic annotations for the interaction screen.
 - More gene-set libraries or a better target-to-gene alias table

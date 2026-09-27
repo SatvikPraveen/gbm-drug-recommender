@@ -117,6 +117,8 @@ metric are in the generated [`results/RESULTS.md`](results/RESULTS.md).
 
 *Grouped CV*: 5 × 5-fold, folds built over InChIKey connectivity blocks so
 salts, stereoisomers and re-screens of one molecule never straddle a split.
+Tabular hyper-parameters are selected by a nested 3-fold grouped CV inside each
+training fold; GNN settings are fixed.
 *Scaffold CV*: Bemis–Murcko scaffolds assigned whole to folds — the
 out-of-distribution estimate. A permutation *p* of 0.048 means the real score
 exceeded all 20 label-permuted runs, the floor for that many rounds. Protocol
