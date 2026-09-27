@@ -1,7 +1,7 @@
 task,strategy,metric,model,features,mean,ci_low,ci_high,baseline_mean
-gbm_potency,grouped,spearman_rho,Random Forest (descriptors + pathway),descriptors_pathway,0.3952777591250743,0.3534930736516925,0.43409100884694046,0.0
-gbm_potency,scaffold,spearman_rho,Random Forest (descriptors + pathway),descriptors_pathway,0.40753035401566856,0.37736566460818566,0.4437627791332468,0.0
-gbm_selective_class,grouped,roc_auc,Random Forest (morgan),morgan,0.7520465965034482,0.7050693206430058,0.797153708329252,0.5
-gbm_selective_class,scaffold,roc_auc,Random Forest (descriptors + pathway),descriptors_pathway,0.721777328697938,0.5915974104185486,0.8519572469773273,0.5
-gbm_selectivity,grouped,spearman_rho,KNN-Jaccard (morgan),morgan,0.21567471083789586,0.17556928261774643,0.252343990391446,0.0
-gbm_selectivity,scaffold,spearman_rho,Linear (pathway one-hot),pathway,0.21990059649839902,0.15321132718861313,0.28658986580818496,0.0
+gbm_potency,grouped,spearman_rho,Random Forest (descriptors + pathway),descriptors_pathway,0.4016053875374891,0.3614375393621838,0.43739485974106956,0.0
+gbm_potency,scaffold,spearman_rho,Random Forest (descriptors + pathway),descriptors_pathway,0.40706374342200957,0.3710844168427664,0.45086188388166415,0.0
+gbm_selective_class,grouped,roc_auc,Random Forest (morgan),morgan,0.747845764267549,0.6942112125103848,0.7941425176768502,0.5
+gbm_selective_class,scaffold,roc_auc,Random Forest (morgan),morgan,0.7401754689424883,0.6083478513356562,0.8603828926818383,0.5
+gbm_selectivity,grouped,spearman_rho,KNN-Jaccard (morgan),morgan,0.2248768125847202,0.18211093899985306,0.26025195520236616,0.0
+gbm_selectivity,scaffold,spearman_rho,Random Forest (morgan),morgan,0.2314117216012746,0.16534964186210171,0.309868006232118,0.0

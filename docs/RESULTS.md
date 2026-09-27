@@ -38,17 +38,22 @@ axes, and the pipeline treats them as separate tasks.
 ## 2. Does structure predict GBM response?
 
 Three tasks, 14 models, identical molecule-grouped folds (5 × 5-fold) and
-scaffold-disjoint folds, dummy baselines and a permutation null.
+scaffold-disjoint folds, dummy baselines and a permutation null. Tabular
+hyper-parameters are chosen by nested grouped CV inside each training fold;
+relative to fixed settings this moved every model by at most 0.03 except the
+SVM classifier (+0.14 AUC, from poorly chosen fixed C and γ), which is the
+expected size of effect and does not change any ranking of feature families.
 
 **Potency (mean ln IC50): yes, modestly.** The best model reaches Spearman
-ρ ≈ 0.40 [0.35, 0.43] under grouped CV and ≈ 0.41 on scaffold-disjoint folds
+ρ ≈ 0.40 [0.36, 0.44] under grouped CV and ≈ 0.41 on scaffold-disjoint folds
 (Random Forest on descriptors + pathway one-hot). Descriptors alone give
-ρ ≈ 0.35, fingerprints ≈ 0.35. This is the expected signal: lipophilicity,
+ρ ≈ 0.38, fingerprints ≈ 0.38. This is the expected signal: lipophilicity,
 size and chemotype correlate with cytotoxic potency in any cell line.
 
 **Selectivity (mean GBM z-score): weakly.** The best structural model manages
-ρ ≈ 0.22 [0.18, 0.25] (KNN with Jaccard distance on Morgan fingerprints), and
-**a 25-column one-hot of GDSC's pathway annotation does exactly as well
+ρ ≈ 0.23 [0.18, 0.26] (KNN with Jaccard distance on Morgan fingerprints;
+random forest on the same fingerprints is indistinguishable), and **a
+25-column one-hot of GDSC's pathway annotation does essentially as well
 (ρ ≈ 0.21–0.22) with no chemistry in it at all.** Combining descriptors with
 the annotation does not add anything (ρ ≈ 0.20). The permutation null
 confirms the signal is real (p = 0.048, the floor for 20 rounds), but a ρ of
@@ -57,15 +62,15 @@ should be predicted. What a drug *targets* matters; what it *looks like*
 barely does, beyond the extent to which look encodes target class.
 
 **Classification of the 19 selective structures**: Random Forest on Morgan
-fingerprints reaches ROC-AUC ≈ 0.75 [0.71, 0.80] and PR-AUC ≈ 0.33 against a
+fingerprints reaches ROC-AUC ≈ 0.75 [0.69, 0.79] and PR-AUC ≈ 0.33 against a
 positive rate of 0.044 (7× enrichment at the top of the ranking). On
-scaffold-disjoint folds the best is ≈ 0.72. With 19 positives the CIs are
-wide and the scaffold estimate spans 0.59–0.85; treat this as "there is
-signal", not as a deployable classifier.
+scaffold-disjoint folds the same model gives ≈ 0.74. With 19 positives the
+CIs are wide and the scaffold estimate spans 0.61–0.86; treat this as "there
+is signal", not as a deployable classifier.
 
 **Graph neural networks**: GCN and GAT encoders on molecular graphs sit in
-the middle of the pack or below on every task (GCN: selectivity ρ = 0.18 [0.14, 0.22],
-potency 0.28 [0.24, 0.32], classification AUC 0.70 [0.64, 0.74]; GAT is
+the middle of the pack or below on every task (GCN: selectivity ρ = 0.17 [0.14, 0.21],
+potency 0.28 [0.24, 0.32], classification AUC 0.70 [0.65, 0.74]; GAT is
 weaker on all three) and never beat gradient boosting or random forests on
 fingerprints. At ~430 molecules this is the expected outcome and
 the reason they are reported as a controlled comparison rather than a

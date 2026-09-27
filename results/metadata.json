@@ -1,8 +1,8 @@
 {
   "package_version": "3.0.0",
-  "git_commit": "ee496dd257d0e0b56b92ed1c12206d03d1e10880",
+  "git_commit": "a14c7ad6e0cec3a3977709da4db38f71a4af26d5",
   "git_dirty": false,
-  "timestamp_utc": "2026-09-27T00:52:55+00:00",
+  "timestamp_utc": "2026-09-27T02:48:26+00:00",
   "python": "3.12.12",
   "platform": "macOS-26.6.2-arm64-arm-64bit",
   "machine": "arm64",
@@ -67,29 +67,40 @@
   },
   "options": {
     "stages": [
+      "data",
+      "features",
+      "benchmark",
+      "final_models",
+      "novelty",
+      "clustering",
+      "similarity",
+      "combinations",
+      "pathways",
+      "figures",
       "report"
     ],
     "quick": false,
     "include_gnn": true,
-    "gnn_repeats": 1,
+    "gnn_repeats": 5,
     "cv_repeats": 5,
     "scramble_rounds": 20,
     "mcs_max_drugs": 120,
     "top_n": 30,
     "device": "auto",
-    "seed": 42
+    "seed": 42,
+    "tune": true
   },
   "timings_seconds": {
-    "features": 0.4,
-    "benchmark": 774.3,
-    "final_models": 4.3,
+    "data": 0.0,
+    "features": 0.5,
+    "benchmark": 3070.4,
+    "final_models": 13.4,
     "novelty": 0.0,
-    "clustering": 5.7,
-    "similarity": 8.1,
+    "clustering": 5.6,
+    "similarity": 7.8,
     "combinations": 0.1,
     "pathways": 0.1,
-    "figures": 1.5,
-    "data": 0.0
+    "figures": 1.7
   },
   "data": {
     "n_curves": 20329,

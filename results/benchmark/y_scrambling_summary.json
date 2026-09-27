@@ -3,24 +3,24 @@
     "model": "KNN-Jaccard (morgan)",
     "metric": "spearman_rho",
     "empirical_p": 0.047619047619047616,
-    "real": 0.16016305524511065,
-    "null_mean": -0.012105872557944711,
+    "real": 0.19893220307227308,
+    "null_mean": -0.007702741862242873,
     "n_rounds": 20
   },
   "gbm_potency": {
-    "model": "SVM (descriptors)",
+    "model": "Random Forest (morgan)",
     "metric": "spearman_rho",
     "empirical_p": 0.047619047619047616,
-    "real": 0.3823449340600794,
-    "null_mean": -0.005985845093270748,
+    "real": 0.3875763335383536,
+    "null_mean": -0.0057769925645796685,
     "n_rounds": 20
   },
   "gbm_selective_class": {
     "model": "Random Forest (morgan)",
     "metric": "roc_auc",
     "empirical_p": 0.047619047619047616,
-    "real": 0.777894958333787,
-    "null_mean": 0.4975831918459746,
+    "real": 0.8080533516178534,
+    "null_mean": 0.48495383067953846,
     "n_rounds": 20
   }
 }

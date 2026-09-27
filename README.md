@@ -112,9 +112,9 @@ metric are in the generated [`results/RESULTS.md`](results/RESULTS.md).
 
 | Task | Best model (grouped CV) | Grouped CV | Scaffold CV | Baseline | Permutation *p* |
 |---|---|---|---|---|---|
-| GBM selectivity — `z_mean`, regression | KNN-Jaccard (Morgan) | ρ = 0.22 [0.18, 0.25] | ρ = 0.22 · Linear (pathway one-hot) | 0.00 | 0.048 |
-| GBM potency — `ln_ic50_mean`, regression | Random Forest (descriptors + pathway) | ρ = 0.40 [0.35, 0.43] | ρ = 0.41 · same model | 0.00 | 0.048 |
-| GBM-selective — classification, 19 / 429 positive | Random Forest (Morgan) | AUC = 0.75 [0.71, 0.80] | AUC = 0.72 · RF (descriptors + pathway) | 0.50 | 0.048 |
+| GBM selectivity — `z_mean`, regression | KNN-Jaccard (Morgan) | ρ = 0.23 [0.18, 0.26] | ρ = 0.23 · Random Forest (Morgan) | 0.00 | 0.048 |
+| GBM potency — `ln_ic50_mean`, regression | Random Forest (descriptors + pathway) | ρ = 0.40 [0.36, 0.44] | ρ = 0.41 · same model | 0.00 | 0.048 |
+| GBM-selective — classification, 19 / 429 positive | Random Forest (Morgan) | AUC = 0.75 [0.69, 0.79] | AUC = 0.74 · same model | 0.50 | 0.048 |
 
 *Grouped CV*: 5 × 5-fold, folds built over InChIKey connectivity blocks so
 salts, stereoisomers and re-screens of one molecule never straddle a split.

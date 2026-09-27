@@ -1,64 +1,64 @@
 task,model,strategy,round,metric,value
-gbm_selectivity,KNN-Jaccard (morgan),grouped,-1,spearman_rho,0.16016305524511065
-gbm_selectivity,KNN-Jaccard (morgan),grouped,0,spearman_rho,-0.06891168088504909
-gbm_selectivity,KNN-Jaccard (morgan),grouped,1,spearman_rho,0.0055240762200259915
-gbm_selectivity,KNN-Jaccard (morgan),grouped,2,spearman_rho,-0.019530895384127618
-gbm_selectivity,KNN-Jaccard (morgan),grouped,3,spearman_rho,-0.0437312010028934
-gbm_selectivity,KNN-Jaccard (morgan),grouped,4,spearman_rho,-0.06484086152342931
-gbm_selectivity,KNN-Jaccard (morgan),grouped,5,spearman_rho,0.02609433226214449
-gbm_selectivity,KNN-Jaccard (morgan),grouped,6,spearman_rho,-0.01655834568639125
-gbm_selectivity,KNN-Jaccard (morgan),grouped,7,spearman_rho,0.04767609875179881
-gbm_selectivity,KNN-Jaccard (morgan),grouped,8,spearman_rho,-0.06431926983067174
-gbm_selectivity,KNN-Jaccard (morgan),grouped,9,spearman_rho,0.07419634806882405
-gbm_selectivity,KNN-Jaccard (morgan),grouped,10,spearman_rho,0.0431075411721368
-gbm_selectivity,KNN-Jaccard (morgan),grouped,11,spearman_rho,0.057890369682225315
-gbm_selectivity,KNN-Jaccard (morgan),grouped,12,spearman_rho,-0.11469851390827841
-gbm_selectivity,KNN-Jaccard (morgan),grouped,13,spearman_rho,-0.031006975790110063
-gbm_selectivity,KNN-Jaccard (morgan),grouped,14,spearman_rho,-0.010089936093490747
-gbm_selectivity,KNN-Jaccard (morgan),grouped,15,spearman_rho,-0.045219476563489305
-gbm_selectivity,KNN-Jaccard (morgan),grouped,16,spearman_rho,-0.017053168087720432
-gbm_selectivity,KNN-Jaccard (morgan),grouped,17,spearman_rho,0.005323644065879531
-gbm_selectivity,KNN-Jaccard (morgan),grouped,18,spearman_rho,-0.04808643161494367
-gbm_selectivity,KNN-Jaccard (morgan),grouped,19,spearman_rho,0.0421168949886658
-gbm_potency,SVM (descriptors),grouped,-1,spearman_rho,0.3823449340600794
-gbm_potency,SVM (descriptors),grouped,0,spearman_rho,0.11275812161469694
-gbm_potency,SVM (descriptors),grouped,1,spearman_rho,-0.07176970523935641
-gbm_potency,SVM (descriptors),grouped,2,spearman_rho,-0.04479498285764877
-gbm_potency,SVM (descriptors),grouped,3,spearman_rho,0.014354867648790718
-gbm_potency,SVM (descriptors),grouped,4,spearman_rho,-0.020086765977888603
-gbm_potency,SVM (descriptors),grouped,5,spearman_rho,-0.02506228983026374
-gbm_potency,SVM (descriptors),grouped,6,spearman_rho,0.01796008692707842
-gbm_potency,SVM (descriptors),grouped,7,spearman_rho,-0.026652111299148934
-gbm_potency,SVM (descriptors),grouped,8,spearman_rho,0.0029991683709388096
-gbm_potency,SVM (descriptors),grouped,9,spearman_rho,-0.04936351568997554
-gbm_potency,SVM (descriptors),grouped,10,spearman_rho,0.007029838821618774
-gbm_potency,SVM (descriptors),grouped,11,spearman_rho,0.09678938706307547
-gbm_potency,SVM (descriptors),grouped,12,spearman_rho,-0.16125000229505732
-gbm_potency,SVM (descriptors),grouped,13,spearman_rho,-0.02620967170925805
-gbm_potency,SVM (descriptors),grouped,14,spearman_rho,0.03907237303178925
-gbm_potency,SVM (descriptors),grouped,15,spearman_rho,-0.0002716323359766702
-gbm_potency,SVM (descriptors),grouped,16,spearman_rho,0.013355189853989563
-gbm_potency,SVM (descriptors),grouped,17,spearman_rho,0.020404837110160067
-gbm_potency,SVM (descriptors),grouped,18,spearman_rho,-0.0007698986251907681
-gbm_potency,SVM (descriptors),grouped,19,spearman_rho,-0.01821019644778817
-gbm_selective_class,Random Forest (morgan),grouped,-1,roc_auc,0.777894958333787
-gbm_selective_class,Random Forest (morgan),grouped,0,roc_auc,0.506842909125209
-gbm_selective_class,Random Forest (morgan),grouped,1,roc_auc,0.43760044695493805
-gbm_selective_class,Random Forest (morgan),grouped,2,roc_auc,0.5709349593495935
-gbm_selective_class,Random Forest (morgan),grouped,3,roc_auc,0.33536585365853655
-gbm_selective_class,Random Forest (morgan),grouped,4,roc_auc,0.6388211382113822
-gbm_selective_class,Random Forest (morgan),grouped,5,roc_auc,0.4749120238859684
-gbm_selective_class,Random Forest (morgan),grouped,6,roc_auc,0.6314582630431391
-gbm_selective_class,Random Forest (morgan),grouped,7,roc_auc,0.5300813008130081
-gbm_selective_class,Random Forest (morgan),grouped,8,roc_auc,0.365342308710905
-gbm_selective_class,Random Forest (morgan),grouped,9,roc_auc,0.5384146341463415
-gbm_selective_class,Random Forest (morgan),grouped,10,roc_auc,0.49496667791309773
-gbm_selective_class,Random Forest (morgan),grouped,11,roc_auc,0.448780487804878
-gbm_selective_class,Random Forest (morgan),grouped,12,roc_auc,0.4276797342939962
-gbm_selective_class,Random Forest (morgan),grouped,13,roc_auc,0.3992870306882453
-gbm_selective_class,Random Forest (morgan),grouped,14,roc_auc,0.4808943089430894
-gbm_selective_class,Random Forest (morgan),grouped,15,roc_auc,0.5791304332052691
-gbm_selective_class,Random Forest (morgan),grouped,16,roc_auc,0.552668487862924
-gbm_selective_class,Random Forest (morgan),grouped,17,roc_auc,0.5160569105691056
-gbm_selective_class,Random Forest (morgan),grouped,18,roc_auc,0.4380763342439315
-gbm_selective_class,Random Forest (morgan),grouped,19,roc_auc,0.584349593495935
+gbm_selectivity,KNN-Jaccard (morgan),grouped,-1,spearman_rho,0.19893220307227308
+gbm_selectivity,KNN-Jaccard (morgan),grouped,0,spearman_rho,0.0006425540580898996
+gbm_selectivity,KNN-Jaccard (morgan),grouped,1,spearman_rho,0.0364783467997538
+gbm_selectivity,KNN-Jaccard (morgan),grouped,2,spearman_rho,-0.02113480188410915
+gbm_selectivity,KNN-Jaccard (morgan),grouped,3,spearman_rho,-0.09858662133393725
+gbm_selectivity,KNN-Jaccard (morgan),grouped,4,spearman_rho,0.014051744162368013
+gbm_selectivity,KNN-Jaccard (morgan),grouped,5,spearman_rho,0.001558322950663077
+gbm_selectivity,KNN-Jaccard (morgan),grouped,6,spearman_rho,0.011045866633875204
+gbm_selectivity,KNN-Jaccard (morgan),grouped,7,spearman_rho,0.03549574332004824
+gbm_selectivity,KNN-Jaccard (morgan),grouped,8,spearman_rho,-0.06605618031786577
+gbm_selectivity,KNN-Jaccard (morgan),grouped,9,spearman_rho,0.06221298170479583
+gbm_selectivity,KNN-Jaccard (morgan),grouped,10,spearman_rho,0.037253439413314215
+gbm_selectivity,KNN-Jaccard (morgan),grouped,11,spearman_rho,0.05360520604472372
+gbm_selectivity,KNN-Jaccard (morgan),grouped,12,spearman_rho,-0.13471744362847532
+gbm_selectivity,KNN-Jaccard (morgan),grouped,13,spearman_rho,0.00532872142251815
+gbm_selectivity,KNN-Jaccard (morgan),grouped,14,spearman_rho,-0.0548094831135336
+gbm_selectivity,KNN-Jaccard (morgan),grouped,15,spearman_rho,-0.036212151501318166
+gbm_selectivity,KNN-Jaccard (morgan),grouped,16,spearman_rho,-0.01821214912972982
+gbm_selectivity,KNN-Jaccard (morgan),grouped,17,spearman_rho,-0.01723039090146018
+gbm_selectivity,KNN-Jaccard (morgan),grouped,18,spearman_rho,-0.017606499754979257
+gbm_selectivity,KNN-Jaccard (morgan),grouped,19,spearman_rho,0.05283795781040086
+gbm_potency,Random Forest (morgan),grouped,-1,spearman_rho,0.3875763335383536
+gbm_potency,Random Forest (morgan),grouped,0,spearman_rho,-0.07812392588646926
+gbm_potency,Random Forest (morgan),grouped,1,spearman_rho,-0.1124662026839605
+gbm_potency,Random Forest (morgan),grouped,2,spearman_rho,-0.032862794379776
+gbm_potency,Random Forest (morgan),grouped,3,spearman_rho,-0.0445202655265099
+gbm_potency,Random Forest (morgan),grouped,4,spearman_rho,-0.029589168859498298
+gbm_potency,Random Forest (morgan),grouped,5,spearman_rho,-0.026241179993790154
+gbm_potency,Random Forest (morgan),grouped,6,spearman_rho,0.06288971388555424
+gbm_potency,Random Forest (morgan),grouped,7,spearman_rho,0.032046722727816036
+gbm_potency,Random Forest (morgan),grouped,8,spearman_rho,0.04431233647322431
+gbm_potency,Random Forest (morgan),grouped,9,spearman_rho,-0.08847430440198507
+gbm_potency,Random Forest (morgan),grouped,10,spearman_rho,-0.00717274887440524
+gbm_potency,Random Forest (morgan),grouped,11,spearman_rho,0.039773341723602515
+gbm_potency,Random Forest (morgan),grouped,12,spearman_rho,-0.02403719486614151
+gbm_potency,Random Forest (morgan),grouped,13,spearman_rho,0.0454515827231669
+gbm_potency,Random Forest (morgan),grouped,14,spearman_rho,-0.07625970495773816
+gbm_potency,Random Forest (morgan),grouped,15,spearman_rho,-0.00040207521642717447
+gbm_potency,Random Forest (morgan),grouped,16,spearman_rho,0.1219035322469348
+gbm_potency,Random Forest (morgan),grouped,17,spearman_rho,0.030016034435150524
+gbm_potency,Random Forest (morgan),grouped,18,spearman_rho,0.014069951782849036
+gbm_potency,Random Forest (morgan),grouped,19,spearman_rho,0.01414649835680958
+gbm_selective_class,Random Forest (morgan),grouped,-1,roc_auc,0.8080533516178534
+gbm_selective_class,Random Forest (morgan),grouped,0,roc_auc,0.4940468286878318
+gbm_selective_class,Random Forest (morgan),grouped,1,roc_auc,0.48058793439340014
+gbm_selective_class,Random Forest (morgan),grouped,2,roc_auc,0.5136178861788618
+gbm_selective_class,Random Forest (morgan),grouped,3,roc_auc,0.34552845528455284
+gbm_selective_class,Random Forest (morgan),grouped,4,roc_auc,0.6083333333333333
+gbm_selective_class,Random Forest (morgan),grouped,5,roc_auc,0.425454890927758
+gbm_selective_class,Random Forest (morgan),grouped,6,roc_auc,0.6215389561860813
+gbm_selective_class,Random Forest (morgan),grouped,7,roc_auc,0.48445121951219505
+gbm_selective_class,Random Forest (morgan),grouped,8,roc_auc,0.3545905392119517
+gbm_selective_class,Random Forest (morgan),grouped,9,roc_auc,0.5310975609756097
+gbm_selective_class,Random Forest (morgan),grouped,10,roc_auc,0.4344102244569969
+gbm_selective_class,Random Forest (morgan),grouped,11,roc_auc,0.4333333333333334
+gbm_selective_class,Random Forest (morgan),grouped,12,roc_auc,0.3982661449773802
+gbm_selective_class,Random Forest (morgan),grouped,13,roc_auc,0.37563306523292816
+gbm_selective_class,Random Forest (morgan),grouped,14,roc_auc,0.5086382113821137
+gbm_selective_class,Random Forest (morgan),grouped,15,roc_auc,0.5484305333347844
+gbm_selective_class,Random Forest (morgan),grouped,16,roc_auc,0.5458235380546576
+gbm_selective_class,Random Forest (morgan),grouped,17,roc_auc,0.5073170731707317
+gbm_selective_class,Random Forest (morgan),grouped,18,roc_auc,0.495497210159518
+gbm_selective_class,Random Forest (morgan),grouped,19,roc_auc,0.5924796747967479
