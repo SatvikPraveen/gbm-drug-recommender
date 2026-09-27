@@ -1,5 +1,7 @@
 """Tests for the evaluation harness on synthetic data: no leakage, sane metrics, working null model."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -70,7 +72,7 @@ def test_run_benchmark_beats_baseline_on_learnable_signal():
             "descriptors",
         ),
     ]
-    scores, oof = ev.run_benchmark(
+    scores, oof, _ = ev.run_benchmark(
         tasks, models, {"descriptors": X}, targets, {"grouped": groups}, n_splits=4, n_repeats=2
     )
     summary = ev.summarize_scores(scores)
@@ -142,3 +144,76 @@ def test_best_models_picks_highest_for_higher_is_better_and_lowest_for_rmse():
         assert ev.best_models(summary, [ev.Task("reg", "regression", "y")]).iloc[0]["model"] == "B"
     finally:
         ev.PRIMARY_METRIC["regression"] = "spearman_rho"
+
+
+class _GroupSpy(Ridge):
+    """Ridge that records which molecule groups each fit saw, to verify inner folds are grouped."""
+
+    seen: list = []
+
+    def fit(self, X, y):
+        _GroupSpy.seen.append(np.asarray(X[:, -1], int).tolist())
+        return super().fit(X[:, :-1], y)
+
+    def predict(self, X):
+        return super().predict(X[:, :-1])
+
+
+def test_nested_tuning_is_grouped_and_records_params():
+    X, groups, targets = _synthetic(n_groups=30, per_group=3)
+    Xg = np.hstack([X, groups[:, None]])  # last column carries the group id for the spy
+    spec = ev.ModelSpec(
+        "spy", lambda k: _GroupSpy(), "descriptors", param_grid=lambda k: {"alpha": [0.1, 1.0, 10.0]}
+    )
+    _GroupSpy.seen = []
+    scores, oof, tuning = ev.run_benchmark(
+        [ev.Task("reg", "regression", "y")],
+        [spec],
+        {"descriptors": Xg},
+        targets,
+        {"grouped": groups},
+        n_splits=3,
+        n_repeats=1,
+        include_baseline=False,
+        tune=True,
+    )
+    # one tuning row per outer fold, with a parsable params dict and an inner score
+    assert len(tuning) == 3 and set(tuning.columns) >= {
+        "task",
+        "strategy",
+        "model",
+        "fold",
+        "inner_score",
+        "params",
+    }
+    assert all(set(json.loads(p)) == {"alpha"} for p in tuning["params"])
+    # Inner fits: 3 outer folds x 3 grid points x 3 inner folds = 27, then 3 refits on the full training fold.
+    assert len(_GroupSpy.seen) == 27 + 3
+    # Every inner fit's training groups are disjoint from the groups it is later scored on: check that
+    # within each outer fold no inner-train set equals the outer-train set except the refit (last of each block).
+    outer_train_sets = [set(s) for s in _GroupSpy.seen[9::10]]
+    inner_sets = [set(s) for i, s in enumerate(_GroupSpy.seen) if i % 10 != 9]
+    assert all(inner < outer_train_sets[i // 9] for i, inner in enumerate(inner_sets))
+
+
+def test_build_model_without_grid_or_without_tune_is_plain_estimator():
+    spec = ev.ModelSpec("r", lambda k: Ridge(), "descriptors")
+    assert isinstance(ev.build_model(spec, "regression", tune=True), Ridge)
+    spec2 = ev.ModelSpec("r", lambda k: Ridge(), "descriptors", param_grid=lambda k: {"alpha": [1.0, 2.0]})
+    assert isinstance(ev.build_model(spec2, "regression", tune=False), Ridge)
+    assert isinstance(ev.build_model(spec2, "regression", tune=True), ev.TunedModel)
+
+
+def test_tuned_model_classification_uses_stratified_grouped_inner_cv_and_exposes_proba():
+    from sklearn.linear_model import LogisticRegression
+
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(90, 4))
+    y = (X[:, 0] + rng.normal(scale=0.5, size=90) > 0).astype(int)
+    groups = np.repeat(np.arange(30), 3)
+    m = ev.TunedModel(LogisticRegression(max_iter=500), {"C": [0.1, 1.0]}, "classification").fit(
+        X, y, groups=groups
+    )
+    assert m.best_params_["C"] in (0.1, 1.0)
+    assert m.predict_proba(X).shape == (90, 2)
+    assert 0 <= m.best_inner_score_ <= 1

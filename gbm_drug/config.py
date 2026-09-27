@@ -160,6 +160,7 @@ UMAP_N_COMPONENTS = 2
 RANDOM_STATE = 42
 CV_FOLDS = 5
 CV_REPEATS = 5
+TUNING_INNER_FOLDS = 3  # inner (nested) grouped CV folds used to pick hyper-parameters per outer fold
 BOOTSTRAP_SAMPLES = 1000
 Y_SCRAMBLE_ROUNDS = 20
 

@@ -146,11 +146,24 @@ def build_report(results_dir: Path = cfg.RESULTS_DIR) -> str:
             f"GNN models use {opts.get('gnn_repeats', '?')} grouped repeat(s). Baseline = mean / class-prior predictor. "
             "Feature blocks: `descriptors` (13 RDKit descriptors), `morgan` (2048-bit ECFP4), `smiles` (molecular graph, GNN), "
             "`pathway` (one-hot of GDSC's target-pathway annotation), `descriptors_pathway` (both). "
-            "Hyper-parameters are fixed a priori (no tuning on this data).\n"
+            + (
+                f"Hyper-parameters of the tabular models are chosen by nested {cfg.TUNING_INNER_FOLDS}-fold molecule-grouped CV "
+                "inside each outer training fold (search spaces in `gbm_drug/models/zoo.py`); GNNs use fixed settings.\n"
+                if opts.get("tune")
+                else "Hyper-parameters are fixed a priori (no tuning on this data).\n"
+            )
         )
         for task in TASKS:
             parts.append(f"### {task.name} — {task.description}\n")
             parts.append(_benchmark_table(bench, task))
+        tuning = _csv(results_dir / "benchmark" / "tuning_summary.csv")
+        if tuning is not None and not tuning.empty:
+            parts.append("### Hyper-parameters selected by nested CV\n")
+            t = tuning[tuning["strategy"] == "grouped"] if "grouped" in set(tuning["strategy"]) else tuning
+            parts.append(
+                "Most frequently selected setting across outer folds (grouped CV); per-fold choices and inner scores are in `benchmark/tuning.csv`.\n\n"
+                + _table(t, ["task", "model", "most_frequent_params"])
+            )
         if scramble:
             rows = pd.DataFrame([{"task": k, **v} for k, v in scramble.items()])
             parts.append("### Label-permutation null (y-scrambling)\n")

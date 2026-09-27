@@ -102,6 +102,41 @@ def _mlp(kind: str) -> BaseEstimator:
     return make_pipeline(StandardScaler(), MLPRegressor(**common))
 
 
+# ---------------------------------------------------------------------------
+# Search spaces for nested tuning (small on purpose: 3-8 settings, one or two axes each).
+# Keys use scikit-learn pipeline step names ("<lowercased class>__<param>").
+# ---------------------------------------------------------------------------
+
+
+def _grid_linear(kind: str) -> dict:
+    if kind == "classification":
+        return {"logisticregression__C": [0.01, 0.1, 1.0, 10.0]}
+    return {"ridge__alpha": [0.1, 1.0, 10.0, 100.0]}
+
+
+def _grid_knn(kind: str) -> dict:
+    step = "kneighborsclassifier" if kind == "classification" else "kneighborsregressor"
+    return {f"{step}__n_neighbors": [3, 5, 7, 11, 15]}
+
+
+def _grid_forest(kind: str) -> dict:
+    return {"max_features": ["sqrt", 0.5], "min_samples_leaf": [1, 3]}
+
+
+def _grid_xgb(kind: str) -> dict:
+    return {"max_depth": [3, 5], "learning_rate": [0.03, 0.1]}
+
+
+def _grid_svm(kind: str) -> dict:
+    step = "svc" if kind == "classification" else "svr"
+    return {f"{step}__C": [0.3, 1.0, 3.0, 10.0], f"{step}__gamma": ["scale", 0.01]}
+
+
+def _grid_mlp(kind: str) -> dict:
+    step = "mlpclassifier" if kind == "classification" else "mlpregressor"
+    return {f"{step}__alpha": [1e-4, 1e-3, 1e-2]}
+
+
 def _gnn_factory(**overrides) -> Callable[[str], BaseEstimator]:
     def factory(kind: str) -> BaseEstimator:
         from .gnn_model import GNNDrugPredictor  # torch import deferred until needed
@@ -113,14 +148,16 @@ def _gnn_factory(**overrides) -> Callable[[str], BaseEstimator]:
 
 def tabular_models() -> list[ModelSpec]:
     return [
-        ModelSpec("Linear (descriptors)", _linear, "descriptors", ("linear",)),
-        ModelSpec("KNN-Jaccard (morgan)", _knn_jaccard, "morgan", ("knn",)),
-        ModelSpec("Random Forest (descriptors)", _random_forest, "descriptors", ("tree",)),
-        ModelSpec("Random Forest (morgan)", _random_forest, "morgan", ("tree",)),
-        ModelSpec("XGBoost (descriptors)", _xgboost, "descriptors", ("tree",)),
-        ModelSpec("XGBoost (morgan)", _xgboost, "morgan", ("tree",)),
-        ModelSpec("SVM (descriptors)", _svm, "descriptors", ("kernel",)),
-        ModelSpec("MLP (descriptors)", _mlp, "descriptors", ("neural",)),
+        ModelSpec("Linear (descriptors)", _linear, "descriptors", ("linear",), param_grid=_grid_linear),
+        ModelSpec("KNN-Jaccard (morgan)", _knn_jaccard, "morgan", ("knn",), param_grid=_grid_knn),
+        ModelSpec(
+            "Random Forest (descriptors)", _random_forest, "descriptors", ("tree",), param_grid=_grid_forest
+        ),
+        ModelSpec("Random Forest (morgan)", _random_forest, "morgan", ("tree",), param_grid=_grid_forest),
+        ModelSpec("XGBoost (descriptors)", _xgboost, "descriptors", ("tree",), param_grid=_grid_xgb),
+        ModelSpec("XGBoost (morgan)", _xgboost, "morgan", ("tree",), param_grid=_grid_xgb),
+        ModelSpec("SVM (descriptors)", _svm, "descriptors", ("kernel",), param_grid=_grid_svm),
+        ModelSpec("MLP (descriptors)", _mlp, "descriptors", ("neural",), param_grid=_grid_mlp),
     ]
 
 

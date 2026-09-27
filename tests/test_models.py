@@ -45,7 +45,9 @@ def test_tabular_models_beat_baseline_in_harness():
     feats, targets, groups = _tabular_data()
     tasks = [ev.Task("reg", "regression", "y")]
     specs = [s for s in tabular_models() if s.name.startswith(("Linear", "Random Forest (desc"))]
-    scores, _ = ev.run_benchmark(tasks, specs, feats, targets, {"grouped": groups}, n_splits=3, n_repeats=1)
+    scores, _, _ = ev.run_benchmark(
+        tasks, specs, feats, targets, {"grouped": groups}, n_splits=3, n_repeats=1
+    )
     summary = ev.summarize_scores(scores)
     rho = summary[summary["metric"] == "spearman_rho"].set_index("model")["mean"]
     assert rho["Linear (descriptors)"] > 0.6 > rho["Baseline"]

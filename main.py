@@ -40,6 +40,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--no-gnn", action="store_true", help="skip the graph neural network models")
     p.add_argument(
+        "--no-tune",
+        action="store_true",
+        help="use fixed hyper-parameters instead of nested grouped CV tuning",
+    )
+    p.add_argument(
         "--gnn-repeats",
         type=int,
         default=1,
@@ -95,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         top_n=args.top_n,
         device=args.device,
         seed=args.seed,
+        tune=not args.no_tune,
     )
     ctx = run(options)
     print(f"\nDone. Stages: {', '.join(ctx.timings)}  |  total {sum(ctx.timings.values()):.0f}s")

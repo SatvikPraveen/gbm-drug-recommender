@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         repeats=args.repeats,
     )
 
-    fold_scores, oof = ev.run_benchmark(
+    fold_scores, oof, _ = ev.run_benchmark(
         [task], [spec], ctx.features, ctx.targets, ctx.groups, n_repeats=args.repeats, random_state=args.seed
     )
     summary = ev.summarize_scores(fold_scores)

@@ -89,10 +89,12 @@ class Options:
     top_n: int = cfg.TOP_N_DRUGS
     device: str = "auto"
     seed: int = cfg.RANDOM_STATE
+    tune: bool = True  # nested hyper-parameter tuning for models that declare a search space
 
     def __post_init__(self):
         if self.quick:
             self.include_gnn = False
+            self.tune = False
             self.cv_repeats = 1
             self.scramble_rounds = 5
             self.mcs_max_drugs = min(self.mcs_max_drugs, 40)

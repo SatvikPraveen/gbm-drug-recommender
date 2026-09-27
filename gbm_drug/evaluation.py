@@ -22,6 +22,7 @@ takes SMILES, is evaluated on exactly the same folds as the tabular models.
 
 from __future__ import annotations
 
+import json
 import logging
 import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -36,15 +37,23 @@ from sklearn.metrics import (
     average_precision_score,
     balanced_accuracy_score,
     brier_score_loss,
+    make_scorer,
     matthews_corrcoef,
     mean_absolute_error,
     mean_squared_error,
     r2_score,
     roc_auc_score,
 )
-from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
+from sklearn.model_selection import GridSearchCV, GroupKFold, StratifiedGroupKFold
 
-from .config import BOOTSTRAP_SAMPLES, CV_FOLDS, CV_REPEATS, RANDOM_STATE, Y_SCRAMBLE_ROUNDS
+from .config import (
+    BOOTSTRAP_SAMPLES,
+    CV_FOLDS,
+    CV_REPEATS,
+    RANDOM_STATE,
+    TUNING_INNER_FOLDS,
+    Y_SCRAMBLE_ROUNDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +87,7 @@ class ModelSpec:
     features: str  # key into the feature dict
     tags: tuple[str, ...] = field(default_factory=tuple)
     repeats: int | None = None  # override CV_REPEATS (e.g. 1 for slow GNNs)
+    param_grid: Callable[[str], dict] | None = None  # kind -> search space for nested tuning (None = fixed)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +231,100 @@ def _subset(block, idx: np.ndarray):
 
 
 # ---------------------------------------------------------------------------
+# Nested hyper-parameter tuning
+# ---------------------------------------------------------------------------
+
+
+def _spearman_score(y_true, y_pred) -> float:
+    y_true, y_pred = np.asarray(y_true, float), np.asarray(y_pred, float)
+    if np.ptp(y_pred) < 1e-12 or np.ptp(y_true) < 1e-12:
+        return 0.0
+    return float(np.nan_to_num(stats.spearmanr(y_true, y_pred)[0]))
+
+
+TUNING_SCORING = {"regression": make_scorer(_spearman_score), "classification": "roc_auc"}
+
+
+class TunedModel:
+    """
+    Nested cross-validation wrapper: picks hyper-parameters with an inner *grouped* CV on
+    the training fold only, then refits the best setting on the whole training fold.
+
+    The inner splitter groups by the same molecule ids as the outer one, so a molecule's
+    salts or re-screens never sit on both sides of an inner split either. ``best_params_``
+    and ``best_inner_score_`` are recorded per outer fold so the chosen settings are auditable.
+    """
+
+    def __init__(
+        self,
+        estimator: BaseEstimator,
+        param_grid: dict,
+        kind: str,
+        inner_folds: int = TUNING_INNER_FOLDS,
+        random_state: int = RANDOM_STATE,
+    ):
+        self.estimator = estimator
+        self.param_grid = param_grid
+        self.kind = kind
+        self.inner_folds = inner_folds
+        self.random_state = random_state
+
+    def fit(self, X, y, groups: np.ndarray | None = None):
+        n_groups = len(np.unique(groups)) if groups is not None else len(y)
+        k = max(2, min(self.inner_folds, n_groups))
+        if self.kind == "classification":
+            inner = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=self.random_state)
+        else:
+            inner = GroupKFold(n_splits=k, shuffle=True, random_state=self.random_state)
+        search = GridSearchCV(
+            self.estimator,
+            self.param_grid,
+            scoring=TUNING_SCORING[self.kind],
+            cv=inner,
+            n_jobs=1,
+            refit=True,
+            error_score="raise",
+        )
+        search.fit(X, y, groups=groups if groups is not None else np.arange(len(y)))
+        self.search_ = search
+        self.model_ = search.best_estimator_
+        self.best_params_ = dict(search.best_params_)
+        self.best_inner_score_ = float(search.best_score_)
+        return self
+
+    def predict(self, X):
+        return self.model_.predict(X)
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(X)
+
+    def decision_function(self, X):
+        return self.model_.decision_function(X)
+
+    def __getattr__(self, name):  # e.g. feature_importances_ of the refit estimator
+        if name.endswith("_") and "model_" in self.__dict__:
+            return getattr(self.__dict__["model_"], name)
+        raise AttributeError(name)
+
+
+def build_model(spec: ModelSpec, kind: str, tune: bool, random_state: int = RANDOM_STATE) -> BaseEstimator:
+    """Unfitted estimator for a spec; wrapped for nested tuning when requested and a grid exists."""
+    est = spec.factory(kind)
+    if tune and spec.param_grid is not None:
+        grid = spec.param_grid(kind)
+        if grid:
+            return TunedModel(est, grid, kind, random_state=random_state)
+    return est
+
+
+def fit_model(model, X, y, groups: np.ndarray | None = None):
+    """Fit, passing molecule groups to tuned models so their inner CV is grouped too."""
+    if isinstance(model, TunedModel):
+        return model.fit(X, y, groups=groups)
+    return model.fit(X, y)
+
+
+# ---------------------------------------------------------------------------
 # Benchmark
 # ---------------------------------------------------------------------------
 
@@ -239,13 +343,18 @@ def run_benchmark(
     n_repeats: int = CV_REPEATS,
     random_state: int = RANDOM_STATE,
     include_baseline: bool = True,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    tune: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Cross-validate every model on every task under every split strategy.
 
-    Returns (fold_scores, oof_predictions). ``fold_scores`` is long-form with one row per
-    (task, strategy, model, repeat, fold, metric). ``oof_predictions`` holds out-of-fold
-    predictions from repeat 0 for every drug, model and task.
+    With ``tune=True`` every model that declares a ``param_grid`` is tuned by nested,
+    molecule-grouped CV inside each outer training fold (see :class:`TunedModel`).
+
+    Returns (fold_scores, oof_predictions, tuning). ``fold_scores`` is long-form with one
+    row per (task, strategy, model, repeat, fold, metric); ``oof_predictions`` holds
+    out-of-fold predictions from repeat 0 for every drug, model and task; ``tuning`` has
+    one row per tuned outer fold with the chosen hyper-parameters and inner score.
     """
     tasks = list(tasks)
     models = list(models)
@@ -256,7 +365,7 @@ def run_benchmark(
         if len(block) != n:
             raise ValueError(f"feature block {key!r} has {len(block)} rows but targets has {n}")
 
-    rows, preds = [], []
+    rows, preds, tuned = [], [], []
     for task in tasks:
         y_all = targets[task.target].to_numpy()
         valid = ~pd.isna(y_all)
@@ -274,8 +383,20 @@ def run_benchmark(
                     tr = tr[valid[tr]]
                     te = te[valid[te]]
                     assert_no_group_leakage(groups, tr, te)
-                    model = spec.factory(task.kind)
-                    model.fit(_subset(block, tr), y_all[tr])
+                    model = build_model(spec, task.kind, tune, random_state)
+                    fit_model(model, _subset(block, tr), y_all[tr], groups[tr])
+                    if isinstance(model, TunedModel):
+                        tuned.append(
+                            {
+                                "task": task.name,
+                                "strategy": strategy,
+                                "model": spec.name,
+                                "repeat": repeat,
+                                "fold": fold,
+                                "inner_score": model.best_inner_score_,
+                                "params": json.dumps(model.best_params_, default=str),
+                            }
+                        )
                     score = _predict(model, task.kind, _subset(block, te))
                     metrics = (
                         classification_metrics(y_all[te], score)
@@ -309,7 +430,7 @@ def run_benchmark(
                                 }
                             )
                 logger.info("%-28s %-10s %-22s done", task.name, strategy, spec.name)
-    return pd.DataFrame(rows), pd.DataFrame(preds)
+    return pd.DataFrame(rows), pd.DataFrame(preds), pd.DataFrame(tuned)
 
 
 def bootstrap_ci(
@@ -384,9 +505,11 @@ def y_scramble(
     n_rounds: int = Y_SCRAMBLE_ROUNDS,
     n_splits: int = CV_FOLDS,
     random_state: int = RANDOM_STATE,
+    tune: bool = False,
 ) -> pd.DataFrame:
     """
     Null distribution of the primary metric when targets are permuted across molecules.
+    The same procedure (including nested tuning when ``tune``) is applied to real and permuted labels.
 
     Returns one row per round with the mean CV score under permutation, plus the real score
     (round = -1). The empirical p-value is the fraction of null rounds >= the real score.
@@ -402,8 +525,8 @@ def y_scramble(
         vals = []
         for _, _, tr, te in iter_splits(y, groups, task.kind, strategy, n_splits, 1, random_state):
             tr, te = tr[valid[tr]], te[valid[te]]
-            model = spec.factory(task.kind)
-            model.fit(_subset(block, tr), y[tr])
+            model = build_model(spec, task.kind, tune, random_state)
+            fit_model(model, _subset(block, tr), y[tr], groups[tr])
             score = _predict(model, task.kind, _subset(block, te))
             m = (
                 classification_metrics(y[te], score)
